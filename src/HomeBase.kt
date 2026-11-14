@@ -21,6 +21,8 @@ abstract class HomeBase : Activity() {
     private var downY = 0f
     private var startP = 0f
     private var vt: VelocityTracker? = null
+    private var lastResume = 0L
+    private var paused = false
 
     protected fun onSwipe(e: MotionEvent): Boolean {
         when (e.actionMasked) {
@@ -66,14 +68,41 @@ abstract class HomeBase : Activity() {
         }
     }
 
+    private fun settle(stamp: Long) {
+        if (isDestroyed || paused || stamp != lastResume || anim?.isRunning == true) return
+        applyProgress()
+        drawer.alpha = 1f
+        drawer.scaleX = 1f
+        drawer.scaleY = 1f
+    }
+
+    override fun onPause() {
+        super.onPause()
+        paused = true
+    }
+
     override fun onResume() {
         super.onResume()
+        paused = false
+        lastResume = System.currentTimeMillis()
+        val stamp = lastResume
+        home.animate().cancel()
+        drawer.animate().cancel()
+        if (progress > 0f) {
+            applyProgress()
+            drawer.alpha = 1f
+            drawer.scaleX = 1f
+            drawer.scaleY = 1f
+        }
         Fx.back(this, prefs, home, drawer, progress)
+        home.postDelayed({ settle(stamp) }, prefs.speed + 200L)
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        if (intent?.action == Intent.ACTION_MAIN) animateTo(0f)
+        if (intent?.action != Intent.ACTION_MAIN) return
+        if (System.currentTimeMillis() - lastResume < 600) return
+        animateTo(0f)
     }
 
     @Deprecated("Deprecated in Java")
