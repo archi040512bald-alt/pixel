@@ -39,6 +39,7 @@ class SettingsActivity : AppCompatActivity() {
         root.orientation = LinearLayout.VERTICAL
         val bar = MaterialToolbar(this)
         bar.title = when (screen) {
+            "desk" -> l("Рабочий стол", "Desktop")
             "anim" -> l("Анимации", "Animations")
             "icons" -> l("Иконки", "Icons")
             "grid" -> l("Сетка", "Grid")
@@ -60,6 +61,7 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(root)
 
         when (screen) {
+            "desk" -> desk()
             "anim" -> anim()
             "icons" -> icons()
             "grid" -> {
@@ -77,6 +79,7 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
             else -> {
+                row(l("Рабочий стол", "Desktop"), l("Док, значки, поиск", "Dock, icons, search")) { go("desk") }
                 row(l("Анимации", "Animations"), l("Пресеты, размытие, зум, скорость", "Presets, blur, zoom, speed")) { go("anim") }
                 row(l("Иконки", "Icons"), l("Форма и иконпак", "Shape and icon pack")) { go("icons") }
                 row(l("Сетка", "Grid"), l("Колонки и строки", "Columns and rows")) { go("grid") }
@@ -125,6 +128,14 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(card, lp)
     }
 
+    private fun toggle(label: String, on: Boolean, set: (Boolean) -> Unit) {
+        val sw = MaterialSwitch(this)
+        sw.text = label
+        sw.isChecked = on
+        sw.setOnCheckedChangeListener { _, v -> set(v) }
+        list.addView(sw)
+    }
+
     private fun slider(name: String, min: Int, max: Int, value: Int, unit: String, set: (Int) -> Unit) {
         val t = text(name + ": " + value + unit, titleStyle)
         t.setPadding(dp(8), dp(16), 0, 0)
@@ -154,6 +165,16 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(g)
     }
 
+    private fun desk() {
+        head(l("Док", "Dock"))
+        toggle(l("Фон для дока", "Dock background"), p.dockBg == 1) { p.dockBg = if (it) 1 else 0 }
+        slider(l("Скругление фона дока", "Dock corner radius"), 0, 40, p.dockR, " dp") { p.dockR = it }
+        toggle(l("Панель поиска", "Search bar"), p.search == 1) { p.search = if (it) 1 else 0 }
+        head(l("Значки", "Icons"))
+        slider(l("Размер значков", "Icon size"), 40, 80, p.iconSize, " dp") { p.iconSize = it }
+        toggle(l("Названия приложений", "App names"), p.labels == 1) { p.labels = if (it) 1 else 0 }
+    }
+
     private fun anim() {
         head(l("Пресет", "Preset"))
         radios(listOf(presetName(this, 0), presetName(this, 1), presetName(this, 2)), p.preset) {
@@ -161,11 +182,7 @@ class SettingsActivity : AppCompatActivity() {
             recreate()
         }
         head(l("Эффекты", "Effects"))
-        val sw = MaterialSwitch(this)
-        sw.text = l("Размытие в анимации", "Blur in animation")
-        sw.isChecked = p.blur == 1
-        sw.setOnCheckedChangeListener { _, on -> p.blur = if (on) 1 else 0 }
-        list.addView(sw)
+        toggle(l("Размытие в анимации", "Blur in animation"), p.blur == 1) { p.blur = if (it) 1 else 0 }
         if (Build.VERSION.SDK_INT < 31) {
             val n = text(l("Размытие работает на Android 12 и новее", "Blur needs Android 12 or newer"), bodyStyle)
             n.alpha = 0.7f
@@ -177,6 +194,9 @@ class SettingsActivity : AppCompatActivity() {
         slider(l("Радиус углов", "Corner radius"), 0, 60, p.radius, " dp") { p.radius = it }
         slider(l("Длительность", "Duration"), 150, 800, p.speed, l(" мс", " ms")) { p.speed = it }
         slider(l("Пауза перед запуском", "Launch delay"), 0, 500, p.pause, l(" мс", " ms")) { p.pause = it }
+        head(l("Горизонтальные приложения", "Landscape apps"))
+        toggle(l("Особая анимация", "Special animation"), p.landOn == 1) { p.landOn = if (it) 1 else 0 }
+        slider(l("Длительность", "Duration"), 300, 1200, p.landSpeed, l(" мс", " ms")) { p.landSpeed = it }
     }
 
     private fun icons() {
