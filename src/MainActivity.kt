@@ -27,6 +27,8 @@ class MainActivity : HomeBase() {
     private var shown = listOf<LauncherApp>()
     private var dragApp: LauncherApp? = null
     private var dragFromDesk = false
+    private var launching = false
+    private var pending: Runnable? = null
     private val rcv = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) { loadApps() }
     }
@@ -108,7 +110,7 @@ class MainActivity : HomeBase() {
             override fun onTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
         })
         grid = GridView(this)
-        grid.numColumns = 5
+        grid.numColumns = prefs.cols
         grid.verticalSpacing = dp(12)
         grid.selector = ColorDrawable(Color.TRANSPARENT)
         grid.clipToPadding = false
@@ -127,7 +129,7 @@ class MainActivity : HomeBase() {
         val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onLongPress(e: MotionEvent) {
                 showPopup(this@MainActivity, home, e.rawX.toInt(), e.rawY.toInt()) {
-                    showSettings(this@MainActivity, prefs) { loadApps() }
+                    showSettings(this@MainActivity, prefs, { loadApps() }, { pickWallpaper() }, { applyGrid() })
                 }
             }
         })
@@ -173,6 +175,27 @@ class MainActivity : HomeBase() {
         root.post { applyProgress() }
     }
 
+    private fun applyGrid() {
+        grid.numColumns = prefs.cols
+        desk.reconfigure()
+    }
+
+    private fun pickWallpaper() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
+        i.addCategory(Intent.CATEGORY_OPENABLE)
+        i.type = "image/*"
+        startActivityForResult(i, 7)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(rc: Int, res: Int, data: Intent?) {
+        super.onActivityResult(rc, res, data)
+        if (rc == 7 && res == RESULT_OK) {
+            val u = data?.data
+            if (u != null) applyWallpaper(this, u)
+        }
+    }
+
     private fun startDrag(a: LauncherApp, cell: View, fromDesk: Boolean) {
         dragApp = a
         dragFromDesk = fromDesk
@@ -210,6 +233,8 @@ class MainActivity : HomeBase() {
     }
 
     private fun launch(a: LauncherApp, icon: View) {
+        if (launching) return
+        launching = true
         val loc = IntArray(2)
         icon.getLocationOnScreen(loc)
         val rect = RectF(loc[0].toFloat(), loc[1].toFloat(),
@@ -219,12 +244,47 @@ class MainActivity : HomeBase() {
         card.cornerDp = prefs.radius
         card.speed = prefs.speed
         card.expand(rect, icon) {
-            home.postDelayed({
-                startActivity(i, ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle())
-            }, prefs.pause.toLong())
+            val run = Runnable {
+                launching = false
+                pending = null
+                try {
+                    startActivity(i, ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle())
+                } catch (e: Exception) {
+                    card.cancel()
+                    restoreHome()
+                }
+            }
+            pending = run
+            home.postDelayed(run, prefs.pause.toLong())
         }
         val t: View = if (progress > 0.5f) drawer else home
         t.animate().scaleX(0.92f).scaleY(0.92f).alpha(0f).setDuration(prefs.speed.toLong()).setInterpolator(EMPH).start()
+    }
+
+    private fun restoreHome() {
+        val s = 1f - 0.08f * progress
+        home.animate().scaleX(s).scaleY(s).alpha(1f - progress).setDuration(250).setInterpolator(EMPH).start()
+        drawer.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(250).setInterpolator(EMPH).start()
+    }
+
+    private fun cancelLaunch(): Boolean {
+        if (!launching) return false
+        launching = false
+        val p = pending
+        if (p != null) home.removeCallbacks(p)
+        pending = null
+        card.cancel()
+        restoreHome()
+        return true
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        if (!cancelLaunch()) super.onNewIntent(intent)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (!cancelLaunch()) super.onBackPressed()
     }
 
     override fun onResume() {
