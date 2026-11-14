@@ -2,7 +2,6 @@ package com.example.pixellauncher
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
@@ -31,13 +30,14 @@ fun showPopup(a: Activity, root: View, x: Int, y: Int, onSettings: () -> Unit) {
     pw.showAtLocation(root, Gravity.NO_GRAVITY, x - a.dp(60), y - a.dp(70))
 }
 
-fun showSettings(a: Activity, p: Prefs, onShape: () -> Unit) {
-    val items = arrayOf("Анимации", "Иконки", "Обои")
+fun showSettings(a: Activity, p: Prefs, onShape: () -> Unit, onWall: () -> Unit, onGrid: () -> Unit) {
+    val items = arrayOf("Анимации", "Иконки", "Сетка", "Обои")
     AlertDialog.Builder(a).setTitle("Настройки").setItems(items) { _, i ->
         when (i) {
             0 -> animDialog(a, p)
             1 -> shapeDialog(a, p, onShape)
-            else -> a.startActivity(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Обои"))
+            2 -> gridDialog(a, p, onGrid)
+            else -> onWall()
         }
     }.show()
 }
@@ -62,14 +62,27 @@ private fun slider(a: Activity, box: LinearLayout, name: String, min: Int, max: 
     box.addView(bar)
 }
 
-private fun animDialog(a: Activity, p: Prefs) {
+private fun newBox(a: Activity): LinearLayout {
     val box = LinearLayout(a)
     box.orientation = LinearLayout.VERTICAL
     box.setPadding(a.dp(24), a.dp(8), a.dp(24), 0)
+    return box
+}
+
+private fun animDialog(a: Activity, p: Prefs) {
+    val box = newBox(a)
     slider(a, box, "Радиус углов", 0, 60, p.radius, " dp") { p.radius = it }
     slider(a, box, "Длительность", 150, 800, p.speed, " мс") { p.speed = it }
     slider(a, box, "Пауза перед запуском", 0, 500, p.pause, " мс") { p.pause = it }
     AlertDialog.Builder(a).setTitle("Анимации").setView(box).setPositiveButton("Готово", null).show()
+}
+
+private fun gridDialog(a: Activity, p: Prefs, onGrid: () -> Unit) {
+    val box = newBox(a)
+    slider(a, box, "Колонок", 3, 6, p.cols, "") { p.cols = it }
+    slider(a, box, "Строк на рабочем столе", 3, 7, p.rows, "") { p.rows = it }
+    AlertDialog.Builder(a).setTitle("Сетка").setView(box).setPositiveButton("Готово", null)
+        .setOnDismissListener { onGrid() }.show()
 }
 
 private fun shapeDialog(a: Activity, p: Prefs, onShape: () -> Unit) {
