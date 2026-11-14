@@ -17,6 +17,7 @@ class WindowCard(c: Context) : View(c) {
     private var src: View? = null
     private var t = 0f
     private var shown = false
+    private var anim: ValueAnimator? = null
     private val ease = PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
     private val density = c.resources.displayMetrics.density
     var cornerDp = 40
@@ -28,8 +29,11 @@ class WindowCard(c: Context) : View(c) {
     }
 
     private fun run(a: Float, b: Float, ms: Long, half: (() -> Unit)?, end: () -> Unit) {
+        anim?.cancel()
         var fired = false
         val va = ValueAnimator.ofFloat(a, b)
+        anim = va
+        visibility = VISIBLE
         va.duration = ms
         va.interpolator = ease
         va.addUpdateListener {
@@ -41,7 +45,9 @@ class WindowCard(c: Context) : View(c) {
             invalidate()
         }
         va.addListener(object : AnimatorListenerAdapter() {
-            override fun onAnimationEnd(x: Animator) { end() }
+            override fun onAnimationEnd(x: Animator) {
+                if (anim === va) end()
+            }
         })
         va.start()
     }
@@ -51,14 +57,19 @@ class WindowCard(c: Context) : View(c) {
         src = v
         t = 0f
         shown = true
-        visibility = VISIBLE
         run(0f, 1f, speed.toLong(), half) {}
     }
 
     fun collapse() {
         if (!shown) return
         shown = false
-        run(1f, 0f, (speed * 0.85f).toLong(), null) { visibility = INVISIBLE }
+        run(t, 0f, (speed * 0.85f).toLong(), null) { visibility = INVISIBLE }
+    }
+
+    fun cancel() {
+        if (!shown) return
+        shown = false
+        run(t, 0f, 220, null) { visibility = INVISIBLE }
     }
 
     override fun onDraw(cv: Canvas) {
