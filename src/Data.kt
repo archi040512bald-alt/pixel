@@ -14,7 +14,9 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 
-class LauncherApp(val label: String, val pkg: String, val cls: String, val icon: Drawable)
+class LauncherApp(val label: String, val pkg: String, val cls: String, val icon: Drawable, val land: Boolean) {
+    val key: String get() = pkg + "/" + cls
+}
 
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
@@ -31,7 +33,9 @@ fun queryApps(c: Context): List<LauncherApp> {
         val pk = ri.activityInfo.packageName
         if (pk == c.packageName) continue
         val ic = IconPacks.icon(c, pk, ri.activityInfo.name) ?: ri.loadIcon(pm)
-        list.add(LauncherApp(ri.loadLabel(pm).toString(), pk, ri.activityInfo.name, ic))
+        val o = ri.activityInfo.screenOrientation
+        val land = o == 0 || o == 6 || o == 8 || o == 11
+        list.add(LauncherApp(ri.loadLabel(pm).toString(), pk, ri.activityInfo.name, ic, land))
     }
     return list.sortedBy { it.label.lowercase() }
 }
@@ -72,26 +76,32 @@ class ShapedIcon(c: Context, private val d: Drawable, private val shape: Int) : 
     }
 }
 
+fun labelView(c: Context, s: String): TextView {
+    val t = TextView(c)
+    t.text = s
+    t.setTextColor(Color.WHITE)
+    t.textSize = 12f
+    t.maxLines = 1
+    t.ellipsize = android.text.TextUtils.TruncateAt.END
+    t.gravity = Gravity.CENTER
+    return t
+}
+
 fun makeCell(c: Context, a: LauncherApp, label: Boolean,
              onLong: (LauncherApp, View) -> Unit = { _, _ -> },
              open: (LauncherApp, View) -> Unit): View {
+    val p = Prefs(c)
     val ll = LinearLayout(c)
     ll.orientation = LinearLayout.VERTICAL
     ll.gravity = Gravity.CENTER
     ll.setPadding(0, c.dp(6), 0, c.dp(6))
-    val icon = ShapedIcon(c, a.icon, Prefs(c).shape)
-    ll.addView(icon, LinearLayout.LayoutParams(c.dp(56), c.dp(56)))
-    if (label) {
-        val t = TextView(c)
-        t.text = a.label
-        t.setTextColor(Color.WHITE)
-        t.textSize = 12f
-        t.maxLines = 1
-        t.ellipsize = android.text.TextUtils.TruncateAt.END
-        t.gravity = Gravity.CENTER
+    val icon = ShapedIcon(c, a.icon, p.shape)
+    val sz = c.dp(p.iconSize)
+    ll.addView(icon, LinearLayout.LayoutParams(sz, sz))
+    if (label && p.labels == 1) {
         val lp = LinearLayout.LayoutParams(-1, -2)
         lp.topMargin = c.dp(4)
-        ll.addView(t, lp)
+        ll.addView(labelView(c, a.label), lp)
     }
     ll.setOnClickListener { open(a, icon) }
     ll.setOnLongClickListener { onLong(a, ll); true }
