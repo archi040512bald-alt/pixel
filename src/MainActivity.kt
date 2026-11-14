@@ -3,6 +3,7 @@ package com.example.pixellauncher
 import android.app.ActivityOptions
 import android.content.*
 import android.graphics.Color
+import android.graphics.RectF
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -18,6 +19,7 @@ import java.util.*
 class MainActivity : HomeBase() {
     private lateinit var grid: GridView
     private lateinit var dock: LinearLayout
+    private lateinit var card: WindowCard
     private var all = listOf<LauncherApp>()
     private var shown = listOf<LauncherApp>()
     private val rcv = object : BroadcastReceiver() {
@@ -100,6 +102,9 @@ class MainActivity : HomeBase() {
         dlp.topMargin = dp(40)
         root.addView(drawer, dlp)
 
+        card = WindowCard(this)
+        root.addView(card, FrameLayout.LayoutParams(-1, -1))
+
         val swipe = View.OnTouchListener { _, e -> onSwipe(e) }
         home.setOnTouchListener(swipe)
         header.setOnTouchListener(swipe)
@@ -146,12 +151,22 @@ class MainActivity : HomeBase() {
     }
 
     private fun launch(a: LauncherApp, icon: View) {
+        val loc = IntArray(2)
+        icon.getLocationOnScreen(loc)
+        val rect = RectF(loc[0].toFloat(), loc[1].toFloat(),
+            (loc[0] + icon.width).toFloat(), (loc[1] + icon.height).toFloat())
         val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(a.pkg, a.cls)
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-        val opts = ActivityOptions.makeClipRevealAnimation(icon, 0, 0, icon.width, icon.height)
-        startActivity(i, opts.toBundle())
+        card.expand(rect, a.icon) {
+            startActivity(i, ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle())
+        }
         val t: View = if (progress > 0.5f) drawer else home
-        t.animate().scaleX(0.9f).scaleY(0.9f).alpha(0f).setDuration(300).setInterpolator(EMPH).start()
+        t.animate().scaleX(0.92f).scaleY(0.92f).alpha(0f).setDuration(300).setInterpolator(EMPH).start()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::card.isInitialized) card.collapse()
     }
 
     override fun onDestroy() {
