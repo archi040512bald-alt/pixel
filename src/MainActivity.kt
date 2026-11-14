@@ -1,161 +1,187 @@
-package com.example.pixellauncher
+package com.pixel.launcher
 
-import android.app.ActivityOptions
-import android.content.*
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.GradientDrawable
-import android.net.Uri
+import android.content.Intent
+import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.provider.MediaStore
-import android.text.Editable
-import android.text.TextWatcher
-import android.view.*
-import android.widget.*
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
 import java.text.SimpleDateFormat
 import java.util.*
 
-class MainActivity : HomeBase() {
-    private lateinit var grid: GridView
-    private lateinit var dock: LinearLayout
-    private var all = listOf<LauncherApp>()
-    private var shown = listOf<LauncherApp>()
-    private val rcv = object : BroadcastReceiver() {
-        override fun onReceive(c: Context, i: Intent) { loadApps() }
+data class AppInfo(val label: String, val packageName: String, val icon: Drawable)
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { LauncherScreen() }
     }
+}
 
-    private fun round(color: Int, r: Int): GradientDrawable {
-        val g = GradientDrawable()
-        g.setColor(color)
-        g.cornerRadius = dp(r).toFloat()
-        return g
-    }
+@OptIn(ExperimentalAnimationApi::class)
+@Composable
+fun LauncherScreen() {
+    val context = LocalContext.current
+    var apps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
+    var showAppDrawer by remember { mutableStateOf(false) }
+    
+    // Состояния для анимации
+    var isLaunching by remember { mutableStateOf(false) }
+    val homeScale = remember { Animatable(1f) }
+    val homeAlpha = remember { Animatable(1f) }
+    
+    val time = remember { mutableStateOf(getCurrentTime()) }
 
-    override fun onCreate(s: Bundle?) {
-        super.onCreate(s)
-        window.setDecorFitsSystemWindows(false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-        val root = FrameLayout(this)
-        setContentView(root)
-
-        home = FrameLayout(this)
-        val glance = TextView(this)
-        glance.text = SimpleDateFormat("EEE, d MMM", Locale.getDefault()).format(Date())
-        glance.setTextColor(Color.WHITE)
-        glance.textSize = 28f
-        glance.setPadding(dp(28), dp(72), 0, 0)
-        dock = LinearLayout(this)
-        dock.gravity = Gravity.CENTER
-        val search = TextView(this)
-        search.text = "G   Search"
-        search.textSize = 16f
-        search.setTextColor(0xFF444746.toInt())
-        search.gravity = Gravity.CENTER_VERTICAL
-        search.setPadding(dp(24), 0, dp(24), 0)
-        search.background = round(0xF2F1F3F4.toInt(), 28)
-        search.setOnClickListener { setProgress(1f) }
-        home.addView(glance)
-        home.addView(dock, FrameLayout.LayoutParams(-1, dp(84), Gravity.BOTTOM))
-        val slp = FrameLayout.LayoutParams(-1, dp(56), Gravity.BOTTOM)
-        slp.setMargins(dp(16), 0, dp(16), dp(16))
-        home.addView(search, slp)
-        root.addView(home)
-
-        drawer = LinearLayout(this)
-        drawer.orientation = LinearLayout.VERTICAL
-        drawer.visibility = View.INVISIBLE
-        val r = dp(28).toFloat()
-        val bg = GradientDrawable()
-        bg.setColor(0xF0202124.toInt())
-        bg.cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
-        drawer.background = bg
-        val header = FrameLayout(this)
-        val handle = View(this)
-        handle.background = round(0x66FFFFFF, 2)
-        header.addView(handle, FrameLayout.LayoutParams(dp(36), dp(4), Gravity.CENTER))
-        val box = EditText(this)
-        box.hint = "Search apps"
-        box.setHintTextColor(0x99FFFFFF.toInt())
-        box.setTextColor(Color.WHITE)
-        box.setSingleLine()
-        box.setPadding(dp(20), 0, dp(20), 0)
-        box.background = round(0x33FFFFFF, 28)
-        box.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(e: Editable?) { filter(e.toString()) }
-            override fun beforeTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
-            override fun onTextChanged(a: CharSequence?, b: Int, c: Int, d: Int) {}
-        })
-        grid = GridView(this)
-        grid.numColumns = 5
-        grid.verticalSpacing = dp(12)
-        grid.selector = ColorDrawable(Color.TRANSPARENT)
-        grid.clipToPadding = false
-        drawer.addView(header, LinearLayout.LayoutParams(-1, dp(28)))
-        val blp = LinearLayout.LayoutParams(-1, dp(52))
-        blp.setMargins(dp(16), 0, dp(16), 0)
-        drawer.addView(box, blp)
-        drawer.addView(grid, LinearLayout.LayoutParams(-1, 0, 1f))
-        val dlp = FrameLayout.LayoutParams(-1, -1)
-        dlp.topMargin = dp(40)
-        root.addView(drawer, dlp)
-
-        val swipe = View.OnTouchListener { _, e -> onSwipe(e) }
-        home.setOnTouchListener(swipe)
-        header.setOnTouchListener(swipe)
-        root.setOnApplyWindowInsetsListener { _, ins ->
-            val b = ins.getInsets(WindowInsets.Type.systemBars())
-            home.setPadding(0, 0, 0, b.bottom)
-            grid.setPadding(dp(8), dp(12), dp(8), b.bottom)
-            ins
-        }
-        val f = IntentFilter()
-        f.addAction(Intent.ACTION_PACKAGE_ADDED)
-        f.addAction(Intent.ACTION_PACKAGE_REMOVED)
-        f.addDataScheme("package")
-        registerReceiver(rcv, f)
-        loadApps()
-        root.post { applyProgress() }
-    }
-
-    private fun loadApps() {
-        all = queryApps(this)
-        filter("")
-        dock.removeAllViews()
-        val intents = listOf(
-            Intent(Intent.ACTION_DIAL),
-            Intent(Intent.ACTION_VIEW, Uri.parse("sms:")),
-            Intent(Intent.ACTION_VIEW, Uri.parse("https://")),
-            Intent(MediaStore.ACTION_IMAGE_CAPTURE))
-        for (intent in intents) {
-            val ri = packageManager.resolveActivity(intent, 0) ?: continue
-            val a = all.firstOrNull { it.pkg == ri.activityInfo.packageName } ?: continue
-            dock.addView(makeCell(this, a, false) { x, v -> launch(x, v) }, LinearLayout.LayoutParams(0, -1, 1f))
+    LaunchedEffect(Unit) {
+        while (true) {
+            time.value = getCurrentTime()
+            kotlinx.coroutines.delay(1000)
         }
     }
 
-    private fun filter(q: String) {
-        shown = if (q.isBlank()) all else all.filter { it.label.contains(q, true) }
-        grid.adapter = object : BaseAdapter() {
-            override fun getCount() = shown.size
-            override fun getItem(p: Int): Any = shown[p]
-            override fun getItemId(p: Int) = p.toLong()
-            override fun getView(p: Int, v: View?, g: ViewGroup?): View =
-                makeCell(this@MainActivity, shown[p], true) { x, iv -> launch(x, iv) }
+    LaunchedEffect(Unit) {
+        val pm = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN, null).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+        apps = pm.queryIntentActivities(intent, 0).mapNotNull { ri ->
+            if (ri.activityInfo.packageName == context.packageName) null
+            else AppInfo(
+                label = ri.loadLabel(pm).toString(),
+                packageName = ri.activityInfo.packageName,
+                icon = ri.loadIcon(pm)
+            )
+        }.sortedBy { it.label.lowercase() }
+    }
+
+    // Анимация возврата домой
+    LaunchedEffect(isLaunching) {
+        if (!isLaunching) {
+            homeScale.snapTo(0.85f)
+            homeAlpha.snapTo(0f)
+            homeScale.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+            homeAlpha.animateTo(1f, tween(200))
         }
     }
 
-    private fun launch(a: LauncherApp, icon: View) {
-        val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(a.pkg, a.cls)
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-        val opts = ActivityOptions.makeClipRevealAnimation(icon, 0, 0, icon.width, icon.height)
-        startActivity(i, opts.toBundle())
-        val t: View = if (progress > 0.5f) drawer else home
-        t.animate().scaleX(0.9f).scaleY(0.9f).alpha(0f).setDuration(300).setInterpolator(EMPH).start()
-    }
+    BackHandler(enabled = showAppDrawer) { showAppDrawer = false }
 
-    override fun onDestroy() {
-        unregisterReceiver(rcv)
-        super.onDestroy()
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        
+        // Главный экран
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .scale(homeScale.value)
+                .alpha(homeAlpha.value)
+                .padding(16.dp)
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures { _, dragAmount ->
+                        if (dragAmount < -50f) showAppDrawer = true
+                    }
+                },
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier = Modifier.height(80.dp))
+            Text(text = time.value, color = Color.White, fontSize = 72.sp, fontWeight = FontWeight.Thin)
+            Text(text = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(Date()), color = Color.Gray, fontSize = 16.sp)
+            
+            Spacer(modifier = Modifier.weight(1f))
+            
+            // Подсказка для свайпа
+            Text(text = "Свайп вверх для меню", color = Color.DarkGray, fontSize = 12.sp, modifier = Modifier.padding(bottom = 32.dp))
+        }
+
+        // App Drawer (выезжает снизу)
+        AnimatedVisibility(
+            visible = showAppDrawer,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(300, easing = FastOutSlowInEasing)) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(300, easing = FastOutLinearInEasing)) + fadeOut()
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color(0xFF121212))) {
+                Column(modifier = Modifier.fillMaxSize().padding(top = 40.dp)) {
+                    Text(
+                        text = "Все приложения", 
+                        color = Color.White, 
+                        fontSize = 20.sp, 
+                        modifier = Modifier.padding(start = 16.dp, bottom = 16.dp)
+                    )
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(4),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(apps) { app ->
+                            AppIcon(app = app, onClick = {
+                                // Запуск анимации
+                                isLaunching = true
+                                kotlinx.coroutines.MainScope().launch {
+                                    homeScale.animateTo(1.2f, tween(250, easing = FastOutLinearInEasing))
+                                    homeAlpha.animateTo(0f, tween(150))
+                                    
+                                    val launchIntent = context.packageManager.getLaunchIntentForPackage(app.packageName)
+                                    context.startActivity(launchIntent)
+                                    
+                                    kotlinx.coroutines.delay(500)
+                                    isLaunching = false
+                                }
+                            })
+                        }
+                    }
+                }
+            }
+        }
     }
+}
+
+@Composable
+fun AppIcon(app: AppInfo, onClick: () -> Unit) {
+    val bitmap = remember(app) { app.icon.toBitmap(144, 144).asImageBitmap() }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = app.label,
+            modifier = Modifier.size(56.dp).clip(CircleShape)
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = app.label,
+            color = Color.White,
+            fontSize = 12.sp,
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+fun getCurrentTime(): String {
+    return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
 }
