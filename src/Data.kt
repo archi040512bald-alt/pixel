@@ -2,12 +2,14 @@ package com.example.pixellauncher
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
-import android.net.Uri
 import android.view.Gravity
 import android.view.View
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -26,13 +28,52 @@ fun queryApps(c: Context): List<LauncherApp> {
     return list.sortedBy { it.label.lowercase() }
 }
 
-fun makeCell(c: Context, a: LauncherApp, label: Boolean, open: (LauncherApp, View) -> Unit): View {
+val SHAPES = arrayOf("Системная", "Круг", "Скруглённый квадрат", "Сквиркл", "Капля", "Квадрат")
+
+class ShapedIcon(c: Context, private val d: Drawable, private val shape: Int) : View(c) {
+    private val path = Path()
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        path.reset()
+        val r = RectF(0f, 0f, w.toFloat(), h.toFloat())
+        val s = w.toFloat()
+        val half = s / 2f
+        when (shape) {
+            1 -> path.addOval(r, Path.Direction.CW)
+            2 -> path.addRoundRect(r, s * 0.28f, s * 0.28f, Path.Direction.CW)
+            3 -> path.addRoundRect(r, s * 0.40f, s * 0.40f, Path.Direction.CW)
+            4 -> path.addRoundRect(r, floatArrayOf(half, half, s * 0.08f, s * 0.08f, half, half, half, half), Path.Direction.CW)
+            5 -> path.addRoundRect(r, s * 0.06f, s * 0.06f, Path.Direction.CW)
+        }
+    }
+
+    override fun onDraw(cv: Canvas) {
+        val w = width
+        val h = height
+        if (shape != 0) cv.clipPath(path)
+        if (shape != 0 && d is AdaptiveIconDrawable) {
+            val o = (w * 0.25f).toInt()
+            val bg = d.background
+            val fg = d.foreground
+            bg?.setBounds(-o, -o, w + o, h + o)
+            bg?.draw(cv)
+            fg?.setBounds(-o, -o, w + o, h + o)
+            fg?.draw(cv)
+        } else {
+            d.setBounds(0, 0, w, h)
+            d.draw(cv)
+        }
+    }
+}
+
+fun makeCell(c: Context, a: LauncherApp, label: Boolean,
+             onLong: (LauncherApp, View) -> Unit = { _, _ -> },
+             open: (LauncherApp, View) -> Unit): View {
     val ll = LinearLayout(c)
     ll.orientation = LinearLayout.VERTICAL
     ll.gravity = Gravity.CENTER
     ll.setPadding(0, c.dp(6), 0, c.dp(6))
-    val icon = ImageView(c)
-    icon.setImageDrawable(a.icon)
+    val icon = ShapedIcon(c, a.icon, Prefs(c).shape)
     ll.addView(icon, LinearLayout.LayoutParams(c.dp(56), c.dp(56)))
     if (label) {
         val t = TextView(c)
@@ -47,9 +88,6 @@ fun makeCell(c: Context, a: LauncherApp, label: Boolean, open: (LauncherApp, Vie
         ll.addView(t, lp)
     }
     ll.setOnClickListener { open(a, icon) }
-    ll.setOnLongClickListener {
-        c.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + a.pkg)))
-        true
-    }
+    ll.setOnLongClickListener { onLong(a, ll); true }
     return ll
 }
