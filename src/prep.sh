@@ -5,6 +5,12 @@ mkdir -p $K $D/res/values
 cp src/*.kt $K/
 cp src/AndroidManifest.xml $D/
 cp src/themes.xml $D/res/values/
+ICON=$(ls src/*.png 2>/dev/null | head -1)
+if [ -n "$ICON" ]; then
+  mkdir -p $D/res/drawable-nodpi
+  convert "$ICON" -resize 432x432 $D/res/drawable-nodpi/ic_launcher.png || cp "$ICON" $D/res/drawable-nodpi/ic_launcher.png
+  sed -i 's|@android:drawable/sym_def_app_icon|@drawable/ic_launcher|' $D/AndroidManifest.xml
+fi
 cp src/app.gradle.kts proj/app/build.gradle.kts
 base64 -d src/key.txt > proj/debug.keystore
 echo 'android.useAndroidX=true' > proj/gradle.properties
