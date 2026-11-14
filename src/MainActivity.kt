@@ -20,8 +20,13 @@ class MainActivity : HomeBase() {
     private lateinit var grid: GridView
     private lateinit var dock: LinearLayout
     private lateinit var card: WindowCard
+    private lateinit var desk: Desk
+    private lateinit var prefs: Prefs
+    private lateinit var trash: TextView
     private var all = listOf<LauncherApp>()
     private var shown = listOf<LauncherApp>()
+    private var dragApp: LauncherApp? = null
+    private var dragFromDesk = false
     private val rcv = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) { loadApps() }
     }
@@ -35,6 +40,7 @@ class MainActivity : HomeBase() {
 
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
+        prefs = Prefs(this)
         window.setDecorFitsSystemWindows(false)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
@@ -42,6 +48,8 @@ class MainActivity : HomeBase() {
         setContentView(root)
 
         home = FrameLayout(this)
+        desk = Desk(this, prefs, { x, v -> launch(x, v) }, { x, v -> startDrag(x, v, true) })
+        home.addView(desk, FrameLayout.LayoutParams(-1, -1))
         val glance = TextView(this)
         glance.text = SimpleDateFormat("EEE, d MMM", Locale.getDefault()).format(Date())
         glance.setTextColor(Color.WHITE)
@@ -57,11 +65,22 @@ class MainActivity : HomeBase() {
         search.setPadding(dp(24), 0, dp(24), 0)
         search.background = round(0xF2F1F3F4.toInt(), 28)
         search.setOnClickListener { setProgress(1f) }
+        trash = TextView(this)
+        trash.text = "Убрать с экрана"
+        trash.setTextColor(Color.WHITE)
+        trash.gravity = Gravity.CENTER
+        trash.background = round(0x99000000.toInt(), 20)
+        trash.visibility = View.GONE
         home.addView(glance)
-        home.addView(dock, FrameLayout.LayoutParams(-1, dp(84), Gravity.BOTTOM))
+        val kl = FrameLayout.LayoutParams(-1, dp(84), Gravity.BOTTOM)
+        kl.bottomMargin = dp(80)
+        home.addView(dock, kl)
         val slp = FrameLayout.LayoutParams(-1, dp(56), Gravity.BOTTOM)
         slp.setMargins(dp(16), 0, dp(16), dp(16))
         home.addView(search, slp)
+        val tlp = FrameLayout.LayoutParams(-1, dp(56), Gravity.TOP)
+        tlp.setMargins(dp(24), dp(48), dp(24), 0)
+        home.addView(trash, tlp)
         root.addView(home)
 
         drawer = LinearLayout(this)
@@ -105,9 +124,40 @@ class MainActivity : HomeBase() {
         card = WindowCard(this)
         root.addView(card, FrameLayout.LayoutParams(-1, -1))
 
-        val swipe = View.OnTouchListener { _, e -> onSwipe(e) }
-        home.setOnTouchListener(swipe)
-        header.setOnTouchListener(swipe)
+        val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onLongPress(e: MotionEvent) {
+                showPopup(this@MainActivity, home, e.rawX.toInt(), e.rawY.toInt()) {
+                    showSettings(this@MainActivity, prefs) { loadApps() }
+                }
+            }
+        })
+        home.setOnTouchListener { _, e ->
+            gd.onTouchEvent(e)
+            onSwipe(e)
+        }
+        header.setOnTouchListener { _, e -> onSwipe(e) }
+        home.setOnDragListener { _, e ->
+            when (e.action) {
+                DragEvent.ACTION_DRAG_STARTED -> {
+                    trash.visibility = if (dragFromDesk) View.VISIBLE else View.GONE
+                    dragApp != null
+                }
+                DragEvent.ACTION_DROP -> {
+                    val a = dragApp
+                    if (a != null) {
+                        if (dragFromDesk && e.y < dp(110)) desk.removeApp(a) else desk.drop(a, e.x, e.y)
+                    }
+                    true
+                }
+                DragEvent.ACTION_DRAG_ENDED -> {
+                    trash.visibility = View.GONE
+                    dragApp = null
+                    desk.rebuild()
+                    true
+                }
+                else -> true
+            }
+        }
         root.setOnApplyWindowInsetsListener { _, ins ->
             val b = ins.getInsets(WindowInsets.Type.systemBars())
             home.setPadding(0, 0, 0, b.bottom)
@@ -123,9 +173,18 @@ class MainActivity : HomeBase() {
         root.post { applyProgress() }
     }
 
+    private fun startDrag(a: LauncherApp, cell: View, fromDesk: Boolean) {
+        dragApp = a
+        dragFromDesk = fromDesk
+        val data = ClipData.newPlainText("app", a.pkg)
+        cell.startDragAndDrop(data, View.DragShadowBuilder(cell), null, 0)
+        if (!fromDesk) setProgress(0f)
+    }
+
     private fun loadApps() {
         all = queryApps(this)
         filter("")
+        desk.setApps(all)
         dock.removeAllViews()
         val intents = listOf(
             Intent(Intent.ACTION_DIAL),
@@ -146,7 +205,7 @@ class MainActivity : HomeBase() {
             override fun getItem(p: Int): Any = shown[p]
             override fun getItemId(p: Int) = p.toLong()
             override fun getView(p: Int, v: View?, g: ViewGroup?): View =
-                makeCell(this@MainActivity, shown[p], true) { x, iv -> launch(x, iv) }
+                makeCell(this@MainActivity, shown[p], true, { x, cell -> startDrag(x, cell, false) }) { x, iv -> launch(x, iv) }
         }
     }
 
@@ -157,11 +216,15 @@ class MainActivity : HomeBase() {
             (loc[0] + icon.width).toFloat(), (loc[1] + icon.height).toFloat())
         val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(a.pkg, a.cls)
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-        card.expand(rect, a.icon) {
-            startActivity(i, ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle())
+        card.cornerDp = prefs.radius
+        card.speed = prefs.speed
+        card.expand(rect, icon) {
+            home.postDelayed({
+                startActivity(i, ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle())
+            }, prefs.pause.toLong())
         }
         val t: View = if (progress > 0.5f) drawer else home
-        t.animate().scaleX(0.92f).scaleY(0.92f).alpha(0f).setDuration(300).setInterpolator(EMPH).start()
+        t.animate().scaleX(0.92f).scaleY(0.92f).alpha(0f).setDuration(prefs.speed.toLong()).setInterpolator(EMPH).start()
     }
 
     override fun onResume() {
