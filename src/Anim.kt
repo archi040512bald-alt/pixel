@@ -8,7 +8,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.view.View
-import android.view.animation.PathInterpolator
+import android.view.animation.Interpolator
 
 class WindowCard(c: Context) : View(c) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -18,10 +18,11 @@ class WindowCard(c: Context) : View(c) {
     private var t = 0f
     private var shown = false
     private var anim: ValueAnimator? = null
-    private val ease = PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
+    private var ease: Interpolator = curveOf(0)
     private val density = c.resources.displayMetrics.density
     var cornerDp = 40
     var speed = 340
+    var curve = 0
 
     init {
         visibility = INVISIBLE
@@ -57,18 +58,21 @@ class WindowCard(c: Context) : View(c) {
         src = v
         t = 0f
         shown = true
+        ease = curveOf(curve)
         run(0f, 1f, speed.toLong(), half) {}
     }
 
     fun collapse() {
         if (!shown) return
         shown = false
+        ease = curveOf(curve)
         run(t, 0f, (speed * 0.85f).toLong(), null) { visibility = INVISIBLE }
     }
 
     fun cancel() {
         if (!shown) return
         shown = false
+        ease = curveOf(0)
         run(t, 0f, 220, null) { visibility = INVISIBLE }
     }
 
@@ -77,8 +81,8 @@ class WindowCard(c: Context) : View(c) {
         val h = height.toFloat()
         box.set(from.left * (1 - t), from.top * (1 - t),
             from.right + (w - from.right) * t, from.bottom + (h - from.bottom) * t)
-        val rad = from.width() * 0.3f * (1 - t) + cornerDp * density * t
-        paint.alpha = (255 * minOf(1f, t * 5f)).toInt()
+        val rad = maxOf(0f, from.width() * 0.3f * (1 - t) + cornerDp * density * t)
+        paint.alpha = (255 * minOf(1f, maxOf(0f, t * 5f))).toInt()
         cv.drawRoundRect(box, rad, rad, paint)
         val v = src ?: return
         if (v.width == 0) return
