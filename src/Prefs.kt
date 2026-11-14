@@ -37,6 +37,7 @@ class Prefs(c: Context) {
     var search by int("search", 1)
     var landOn by int("landOn", 1)
     var landSpeed by int("landSpeed", 600)
+    var landR by int("landR", 40)
     var pack by str("pack")
     var desk by str("desk")
     var lang by str("lang")
