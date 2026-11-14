@@ -2,6 +2,7 @@ package com.example.pixellauncher
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.LinearLayout
@@ -14,6 +15,7 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.radiobutton.MaterialRadioButton
 import com.google.android.material.slider.Slider
 
@@ -26,6 +28,8 @@ class SettingsActivity : AppCompatActivity() {
         if (u != null) applyWallpaper(this, u)
     }
 
+    private fun l(ru: String, en: String) = L(this, ru, en)
+
     override fun onCreate(s: Bundle?) {
         DynamicColors.applyToActivityIfAvailable(this)
         super.onCreate(s)
@@ -35,11 +39,12 @@ class SettingsActivity : AppCompatActivity() {
         root.orientation = LinearLayout.VERTICAL
         val bar = MaterialToolbar(this)
         bar.title = when (screen) {
-            "anim" -> "Анимации"
-            "icons" -> "Иконки"
-            "grid" -> "Сетка"
-            "wall" -> "Обои"
-            else -> "Настройки"
+            "anim" -> l("Анимации", "Animations")
+            "icons" -> l("Иконки", "Icons")
+            "grid" -> l("Сетка", "Grid")
+            "wall" -> l("Обои", "Wallpaper")
+            "lang" -> l("Язык", "Language")
+            else -> l("Настройки", "Settings")
         }
         if (screen != "main") {
             bar.setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
@@ -55,23 +60,29 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(root)
 
         when (screen) {
-            "anim" -> {
-                slider("Радиус углов", 0, 60, p.radius, " dp") { p.radius = it }
-                slider("Длительность", 150, 800, p.speed, " мс") { p.speed = it }
-                slider("Пауза перед запуском", 0, 500, p.pause, " мс") { p.pause = it }
-            }
+            "anim" -> anim()
             "icons" -> icons()
             "grid" -> {
-                slider("Колонок", 3, 6, p.cols, "") { p.cols = it }
-                slider("Строк на рабочем столе", 3, 7, p.rows, "") { p.rows = it }
+                slider(l("Колонок", "Columns"), 3, 6, p.cols, "") { p.cols = it }
+                slider(l("Строк на рабочем столе", "Desktop rows"), 3, 7, p.rows, "") { p.rows = it }
             }
-            "wall" -> row("Выбрать картинку", "Из галереи или файлов") { pick.launch("image/*") }
+            "wall" -> row(l("Выбрать картинку", "Choose image"), l("Из галереи или файлов", "From gallery or files")) {
+                pick.launch("image/*")
+            }
+            "lang" -> {
+                val codes = arrayOf("", "ru", "en")
+                radios(listOf(l("Системный", "System"), "Русский", "English"), codes.indexOf(p.lang).coerceAtLeast(0)) {
+                    p.lang = codes[it]
+                    recreate()
+                }
+            }
             else -> {
-                row("Анимации", "Радиус углов, скорость, пауза") { go("anim") }
-                row("Иконки", "Форма и иконпак") { go("icons") }
-                row("Сетка", "Колонки и строки") { go("grid") }
-                row("Обои", "Выбрать картинку для обоев") { go("wall") }
-                row("Лаунчер по умолчанию", "Открыть системные настройки") {
+                row(l("Анимации", "Animations"), l("Пресеты, размытие, зум, скорость", "Presets, blur, zoom, speed")) { go("anim") }
+                row(l("Иконки", "Icons"), l("Форма и иконпак", "Shape and icon pack")) { go("icons") }
+                row(l("Сетка", "Grid"), l("Колонки и строки", "Columns and rows")) { go("grid") }
+                row(l("Обои", "Wallpaper"), l("Выбрать картинку для обоев", "Pick a wallpaper image")) { go("wall") }
+                row(l("Язык", "Language"), l("Русский, English", "Russian, English")) { go("lang") }
+                row(l("Лаунчер по умолчанию", "Default launcher"), l("Открыть системные настройки", "Open system settings")) {
                     startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                 }
             }
@@ -89,6 +100,12 @@ class SettingsActivity : AppCompatActivity() {
         v.text = t
         v.setTextAppearance(style)
         return v
+    }
+
+    private fun head(t: String) {
+        val h = text(t, titleStyle)
+        h.setPadding(dp(8), dp(16), 0, dp(8))
+        list.addView(h)
     }
 
     private fun row(title: String, sub: String, click: () -> Unit) {
@@ -124,39 +141,67 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(sl)
     }
 
-    private fun icons() {
-        var cur = "Системные"
-        if (p.pack.isNotEmpty()) {
-            cur = IconPacks.find(this).firstOrNull { it.first == p.pack }?.second ?: p.pack
-        }
-        row("Иконпак", cur) { pickPack() }
-        val head = text("Форма иконок", titleStyle)
-        head.setPadding(dp(8), dp(16), 0, dp(8))
-        list.addView(head)
+    private fun radios(items: List<String>, checked: Int, on: (Int) -> Unit) {
         val g = RadioGroup(this)
-        for (i in SHAPES.indices) {
+        for (i in items.indices) {
             val r = MaterialRadioButton(this)
-            r.text = SHAPES[i]
+            r.text = items[i]
             r.id = 100 + i
             g.addView(r)
         }
-        g.check(100 + p.shape)
-        g.setOnCheckedChangeListener { _, id -> p.shape = id - 100 }
+        g.check(100 + checked)
+        g.setOnCheckedChangeListener { _, id -> on(id - 100) }
         list.addView(g)
+    }
+
+    private fun anim() {
+        head(l("Пресет", "Preset"))
+        radios(listOf(presetName(this, 0), presetName(this, 1), presetName(this, 2)), p.preset) {
+            p.applyPreset(it)
+            recreate()
+        }
+        head(l("Эффекты", "Effects"))
+        val sw = MaterialSwitch(this)
+        sw.text = l("Размытие в анимации", "Blur in animation")
+        sw.isChecked = p.blur == 1
+        sw.setOnCheckedChangeListener { _, on -> p.blur = if (on) 1 else 0 }
+        list.addView(sw)
+        if (Build.VERSION.SDK_INT < 31) {
+            val n = text(l("Размытие работает на Android 12 и новее", "Blur needs Android 12 or newer"), bodyStyle)
+            n.alpha = 0.7f
+            list.addView(n)
+        }
+        slider(l("Сила размытия", "Blur strength"), 1, 30, p.blurR, "") { p.blurR = it }
+        slider(l("Зум фона", "Background zoom"), -15, 15, p.zoom, " %") { p.zoom = it }
+        head(l("Параметры", "Parameters"))
+        slider(l("Радиус углов", "Corner radius"), 0, 60, p.radius, " dp") { p.radius = it }
+        slider(l("Длительность", "Duration"), 150, 800, p.speed, l(" мс", " ms")) { p.speed = it }
+        slider(l("Пауза перед запуском", "Launch delay"), 0, 500, p.pause, l(" мс", " ms")) { p.pause = it }
+    }
+
+    private fun icons() {
+        var cur = l("Системные", "System")
+        if (p.pack.isNotEmpty()) {
+            cur = IconPacks.find(this).firstOrNull { it.first == p.pack }?.second ?: p.pack
+        }
+        row(l("Иконпак", "Icon pack"), cur) { pickPack() }
+        head(l("Форма иконок", "Icon shape"))
+        radios(shapeNames(this), p.shape) { p.shape = it }
     }
 
     private fun pickPack() {
         val packs = IconPacks.find(this)
         if (packs.isEmpty()) {
-            MaterialAlertDialogBuilder(this).setTitle("Иконпаки не найдены")
-                .setMessage("Установите иконпак (например, из Google Play), и он появится здесь.")
+            MaterialAlertDialogBuilder(this).setTitle(l("Иконпаки не найдены", "No icon packs found"))
+                .setMessage(l("Установите иконпак (например, из Google Play), и он появится здесь.",
+                    "Install an icon pack (for example from Google Play) and it will appear here."))
                 .setPositiveButton("OK", null).show()
             return
         }
         val names = ArrayList<String>()
-        names.add("Системные")
+        names.add(l("Системные", "System"))
         for (x in packs) names.add(x.second)
-        MaterialAlertDialogBuilder(this).setTitle("Иконпак")
+        MaterialAlertDialogBuilder(this).setTitle(l("Иконпак", "Icon pack"))
             .setItems(names.toTypedArray()) { _, i ->
                 p.pack = if (i == 0) "" else packs[i - 1].first
                 recreate()
