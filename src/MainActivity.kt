@@ -264,7 +264,7 @@ class MainActivity : HomeBase() {
         val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(a.pkg, a.cls)
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         val land = a.land && prefs.landOn == 1
-        card.cornerDp = prefs.radius
+        card.cornerDp = if (land) prefs.landR else prefs.radius
         card.speed = if (land) prefs.landSpeed else prefs.speed
         card.curve = prefs.curve
         card.land = land
