@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
@@ -141,15 +142,19 @@ class Desk(c: Context, private val prefs: Prefs,
             lp.topMargin = context.dp(4)
             ll.addView(labelView(context, item.name), lp)
         }
-        ll.setOnClickListener { showFolder(item) }
+        ll.setOnClickListener { showFolder(item, ll.getChildAt(0)) }
         ll.setOnLongClickListener { onDrag(item, ll); true }
         return ll
     }
 
-    private fun showFolder(item: DeskItem) {
+    private fun showFolder(item: DeskItem, origin: View) {
         val box = LinearLayout(context)
         box.orientation = LinearLayout.VERTICAL
         box.setPadding(context.dp(16), context.dp(12), context.dp(16), context.dp(8))
+        val bg = GradientDrawable()
+        bg.setColor(0xF0202124.toInt())
+        bg.cornerRadius = context.dp(28).toFloat()
+        box.background = bg
         val et = EditText(context)
         et.setText(item.name)
         et.setSingleLine()
@@ -161,15 +166,13 @@ class Desk(c: Context, private val prefs: Prefs,
         g.columnCount = 4
         box.addView(g)
         val dlg = AlertDialog.Builder(context).setView(box).create()
-        val bg = GradientDrawable()
-        bg.setColor(0xF0202124.toInt())
-        bg.cornerRadius = context.dp(28).toFloat()
-        dlg.window?.setBackgroundDrawable(bg)
+        dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dlg.window?.setWindowAnimations(0)
         for (k in item.keys.toList()) {
             val a = find(k) ?: continue
-            val cell = makeCell(context, a, true, { x, _ -> dlg.dismiss(); takeOut(item, x) }) { x, v ->
+            val cell = makeCell(context, a, true, { x, _ -> dlg.dismiss(); takeOut(item, x) }) { x, _ ->
                 dlg.dismiss()
-                onOpen(x, v)
+                onOpen(x, origin)
             }
             val lp = GridLayout.LayoutParams()
             lp.width = context.dp(72)
@@ -184,7 +187,20 @@ class Desk(c: Context, private val prefs: Prefs,
                 post { rebuild() }
             }
         }
+        box.alpha = 0f
         dlg.show()
+        box.post {
+            val a = IntArray(2)
+            val o = IntArray(2)
+            box.getLocationOnScreen(a)
+            origin.getLocationOnScreen(o)
+            box.pivotX = o[0] + origin.width / 2f - a[0]
+            box.pivotY = o[1] + origin.height / 2f - a[1]
+            box.scaleX = 0.3f
+            box.scaleY = 0.3f
+            box.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(prefs.speed.toLong())
+                .setInterpolator(curveOf(prefs.curve)).start()
+        }
     }
 
     private fun takeOut(item: DeskItem, a: LauncherApp) {
