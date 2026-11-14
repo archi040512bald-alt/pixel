@@ -9,11 +9,10 @@ class DeskItem(val pkg: String, val cls: String, var col: Int, var row: Int)
 class Desk(c: Context, private val prefs: Prefs,
            private val onOpen: (LauncherApp, View) -> Unit,
            private val onDrag: (LauncherApp, View) -> Unit) : FrameLayout(c) {
-    private val cols = 5
     private val items = ArrayList<DeskItem>()
     private var apps = listOf<LauncherApp>()
-    private val rowH = c.dp(92)
     private val topPad = c.dp(120)
+    private val bottomPad = c.dp(170)
 
     init {
         for (s in prefs.desk.split(";")) {
@@ -22,6 +21,8 @@ class Desk(c: Context, private val prefs: Prefs,
         }
     }
 
+    private fun rowH(): Int = ((height - topPad - bottomPad) / prefs.rows).coerceAtLeast(context.dp(64))
+
     fun setApps(list: List<LauncherApp>) {
         apps = list
         rebuild()
@@ -29,6 +30,35 @@ class Desk(c: Context, private val prefs: Prefs,
 
     private fun save() {
         prefs.desk = items.joinToString(";") { it.pkg + "|" + it.cls + "|" + it.col + "|" + it.row }
+    }
+
+    private fun free(col: Int, row: Int, skip: DeskItem?): IntArray? {
+        var best: IntArray? = null
+        var bd = Int.MAX_VALUE
+        for (rr in 0 until prefs.rows) {
+            for (cc in 0 until prefs.cols) {
+                if (items.any { it !== skip && it.col == cc && it.row == rr }) continue
+                val d = (rr - row) * (rr - row) + (cc - col) * (cc - col)
+                if (d < bd) {
+                    bd = d
+                    best = intArrayOf(cc, rr)
+                }
+            }
+        }
+        return best
+    }
+
+    fun reconfigure() {
+        val old = items.toList()
+        items.clear()
+        for (x in old) {
+            val pos = free(x.col, x.row, null) ?: continue
+            x.col = pos[0]
+            x.row = pos[1]
+            items.add(x)
+        }
+        save()
+        rebuild()
     }
 
     fun rebuild() {
@@ -43,46 +73,33 @@ class Desk(c: Context, private val prefs: Prefs,
             cell.tag = item
             addView(cell)
         }
+        requestLayout()
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        val cw = (r - l) / cols
+        val cw = ((r - l) / prefs.cols).coerceAtLeast(1)
+        val rh = rowH()
         for (i in 0 until childCount) {
             val v = getChildAt(i)
             val item = v.tag as DeskItem
             v.measure(MeasureSpec.makeMeasureSpec(cw, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(rowH, MeasureSpec.EXACTLY))
-            v.layout(item.col * cw, topPad + item.row * rowH,
-                (item.col + 1) * cw, topPad + (item.row + 1) * rowH)
+                MeasureSpec.makeMeasureSpec(rh, MeasureSpec.EXACTLY))
+            v.layout(item.col * cw, topPad + item.row * rh,
+                (item.col + 1) * cw, topPad + (item.row + 1) * rh)
         }
     }
 
     fun drop(a: LauncherApp, x: Float, y: Float) {
-        val cw = (width / cols).coerceAtLeast(1)
-        val maxRow = ((height - context.dp(170) - topPad) / rowH - 1).coerceAtLeast(0)
-        val col = (x / cw).toInt().coerceIn(0, cols - 1)
-        val row = ((y - topPad) / rowH).toInt().coerceIn(0, maxRow)
+        val cw = (width / prefs.cols).coerceAtLeast(1)
+        val col = (x / cw).toInt().coerceIn(0, prefs.cols - 1)
+        val row = ((y - topPad) / rowH()).toInt().coerceIn(0, prefs.rows - 1)
         val existing = items.firstOrNull { it.pkg == a.pkg && it.cls == a.cls }
-        var bestCol = -1
-        var bestRow = -1
-        var bd = Int.MAX_VALUE
-        for (rr in 0..maxRow) {
-            for (cc in 0 until cols) {
-                if (items.any { it !== existing && it.col == cc && it.row == rr }) continue
-                val d = (rr - row) * (rr - row) + (cc - col) * (cc - col)
-                if (d < bd) {
-                    bd = d
-                    bestCol = cc
-                    bestRow = rr
-                }
-            }
-        }
-        if (bestCol < 0) return
+        val pos = free(col, row, existing) ?: return
         if (existing != null) {
-            existing.col = bestCol
-            existing.row = bestRow
+            existing.col = pos[0]
+            existing.row = pos[1]
         } else {
-            items.add(DeskItem(a.pkg, a.cls, bestCol, bestRow))
+            items.add(DeskItem(a.pkg, a.cls, pos[0], pos[1]))
         }
         save()
         post { rebuild() }
