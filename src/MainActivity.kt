@@ -7,6 +7,7 @@ import android.graphics.RectF
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.text.Editable
@@ -21,7 +22,6 @@ class MainActivity : HomeBase() {
     private lateinit var dock: LinearLayout
     private lateinit var card: WindowCard
     private lateinit var desk: Desk
-    private lateinit var prefs: Prefs
     private lateinit var trash: TextView
     private var all = listOf<LauncherApp>()
     private var shown = listOf<LauncherApp>()
@@ -40,10 +40,24 @@ class MainActivity : HomeBase() {
         return g
     }
 
+    @Suppress("DEPRECATION")
+    private fun edge() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false)
+        } else {
+            window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun bottomOf(i: WindowInsets): Int =
+        if (Build.VERSION.SDK_INT >= 30) i.getInsets(WindowInsets.Type.systemBars()).bottom
+        else i.systemWindowInsetBottom
+
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
-        prefs = Prefs(this)
-        window.setDecorFitsSystemWindows(false)
+        edge()
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         val root = FrameLayout(this)
@@ -60,15 +74,15 @@ class MainActivity : HomeBase() {
         dock = LinearLayout(this)
         dock.gravity = Gravity.CENTER
         val search = TextView(this)
-        search.text = "G   Search"
+        search.text = L(this, "G   Поиск", "G   Search")
         search.textSize = 16f
         search.setTextColor(0xFF444746.toInt())
         search.gravity = Gravity.CENTER_VERTICAL
         search.setPadding(dp(24), 0, dp(24), 0)
         search.background = round(0xF2F1F3F4.toInt(), 28)
-        search.setOnClickListener { setProgress(1f) }
+        search.setOnClickListener { animateTo(1f) }
         trash = TextView(this)
-        trash.text = "Убрать с экрана"
+        trash.text = L(this, "Убрать с экрана", "Remove from screen")
         trash.setTextColor(Color.WHITE)
         trash.gravity = Gravity.CENTER
         trash.background = round(0x99000000.toInt(), 20)
@@ -98,7 +112,7 @@ class MainActivity : HomeBase() {
         handle.background = round(0x66FFFFFF, 2)
         header.addView(handle, FrameLayout.LayoutParams(dp(36), dp(4), Gravity.CENTER))
         val box = EditText(this)
-        box.hint = "Search apps"
+        box.hint = L(this, "Поиск приложений", "Search apps")
         box.setHintTextColor(0x99FFFFFF.toInt())
         box.setTextColor(Color.WHITE)
         box.setSingleLine()
@@ -129,7 +143,7 @@ class MainActivity : HomeBase() {
         val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onLongPress(e: MotionEvent) {
                 showPopup(this@MainActivity, home, e.rawX.toInt(), e.rawY.toInt()) {
-                    showSettings(this@MainActivity, prefs, { loadApps() }, { pickWallpaper() }, { applyGrid() })
+                    startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
                 }
             }
         })
@@ -161,9 +175,9 @@ class MainActivity : HomeBase() {
             }
         }
         root.setOnApplyWindowInsetsListener { _, ins ->
-            val b = ins.getInsets(WindowInsets.Type.systemBars())
-            home.setPadding(0, 0, 0, b.bottom)
-            grid.setPadding(dp(8), dp(12), dp(8), b.bottom)
+            val b = bottomOf(ins)
+            home.setPadding(0, 0, 0, b)
+            grid.setPadding(dp(8), dp(12), dp(8), b)
             ins
         }
         val f = IntentFilter()
@@ -171,6 +185,7 @@ class MainActivity : HomeBase() {
         f.addAction(Intent.ACTION_PACKAGE_REMOVED)
         f.addDataScheme("package")
         registerReceiver(rcv, f)
+        prefs.listen { k -> if (k == "lang") recreate() else { loadApps(); applyGrid() } }
         loadApps()
         root.post { applyProgress() }
     }
@@ -180,28 +195,12 @@ class MainActivity : HomeBase() {
         desk.reconfigure()
     }
 
-    private fun pickWallpaper() {
-        val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
-        i.addCategory(Intent.CATEGORY_OPENABLE)
-        i.type = "image/*"
-        startActivityForResult(i, 7)
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onActivityResult(rc: Int, res: Int, data: Intent?) {
-        super.onActivityResult(rc, res, data)
-        if (rc == 7 && res == RESULT_OK) {
-            val u = data?.data
-            if (u != null) applyWallpaper(this, u)
-        }
-    }
-
     private fun startDrag(a: LauncherApp, cell: View, fromDesk: Boolean) {
         dragApp = a
         dragFromDesk = fromDesk
         val data = ClipData.newPlainText("app", a.pkg)
         cell.startDragAndDrop(data, View.DragShadowBuilder(cell), null, 0)
-        if (!fromDesk) setProgress(0f)
+        if (!fromDesk) animateTo(0f)
     }
 
     private fun loadApps() {
@@ -243,6 +242,7 @@ class MainActivity : HomeBase() {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         card.cornerDp = prefs.radius
         card.speed = prefs.speed
+        card.curve = prefs.curve
         card.expand(rect, icon) {
             val run = Runnable {
                 launching = false
@@ -258,13 +258,11 @@ class MainActivity : HomeBase() {
             home.postDelayed(run, prefs.pause.toLong())
         }
         val t: View = if (progress > 0.5f) drawer else home
-        t.animate().scaleX(0.92f).scaleY(0.92f).alpha(0f).setDuration(prefs.speed.toLong()).setInterpolator(EMPH).start()
+        Fx.out(this, prefs, t, home)
     }
 
     private fun restoreHome() {
-        val s = 1f - 0.08f * progress
-        home.animate().scaleX(s).scaleY(s).alpha(1f - progress).setDuration(250).setInterpolator(EMPH).start()
-        drawer.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(250).setInterpolator(EMPH).start()
+        Fx.back(this, prefs, home, drawer, progress)
     }
 
     private fun cancelLaunch(): Boolean {
