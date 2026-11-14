@@ -3,6 +3,7 @@ D=proj/app/src/main
 K=$D/java/com/example/pixellauncher
 mkdir -p $K $D/res/values
 cp src/*.kt $K/
+sed -i 's/setProgress(/animateTo(/g' $K/*.kt
 cp src/AndroidManifest.xml $D/
 cp src/themes.xml $D/res/values/
 cp src/app.gradle.kts proj/app/build.gradle.kts
