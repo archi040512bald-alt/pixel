@@ -12,6 +12,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 
 abstract class HomeBase : Activity() {
+    protected val prefs by lazy { Prefs(this) }
     protected val EMPH = PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
     protected lateinit var home: FrameLayout
     protected lateinit var drawer: LinearLayout
@@ -36,13 +37,13 @@ abstract class HomeBase : Activity() {
                 vt?.addMovement(e); vt?.computeCurrentVelocity(1000)
                 val vy = vt?.yVelocity ?: 0f
                 vt?.recycle(); vt = null
-                setProgress(if (vy < -900f) 1f else if (vy > 900f) 0f else if (progress > 0.5f) 1f else 0f)
+                animateTo(if (vy < -900f) 1f else if (vy > 900f) 0f else if (progress > 0.5f) 1f else 0f)
             }
         }
         return true
     }
 
-    protected fun setProgress(to: Float) {
+    protected fun animateTo(to: Float) {
         anim?.cancel()
         val va = ValueAnimator.ofFloat(progress, to)
         va.duration = 350
@@ -67,18 +68,16 @@ abstract class HomeBase : Activity() {
 
     override fun onResume() {
         super.onResume()
-        val s = 1f - 0.08f * progress
-        home.animate().scaleX(s).scaleY(s).alpha(1f - progress).setDuration(300).setInterpolator(EMPH).start()
-        drawer.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(300).setInterpolator(EMPH).start()
+        Fx.back(this, prefs, home, drawer, progress)
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        if (intent?.action == Intent.ACTION_MAIN) setProgress(0f)
+        if (intent?.action == Intent.ACTION_MAIN) animateTo(0f)
     }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (progress > 0f) setProgress(0f)
+        if (progress > 0f) animateTo(0f)
     }
 }
