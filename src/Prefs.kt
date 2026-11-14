@@ -2,39 +2,58 @@ package com.example.pixellauncher
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlin.properties.ReadWriteProperty
+import kotlin.reflect.KProperty
 
 class Prefs(c: Context) {
     private val sp = c.getSharedPreferences("launcher", Context.MODE_PRIVATE)
     private var l: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
-    var radius: Int
-        get() = sp.getInt("radius", 40)
-        set(v) { sp.edit().putInt("radius", v).apply() }
-    var speed: Int
-        get() = sp.getInt("speed", 340)
-        set(v) { sp.edit().putInt("speed", v).apply() }
-    var pause: Int
-        get() = sp.getInt("pause", 0)
-        set(v) { sp.edit().putInt("pause", v).apply() }
-    var shape: Int
-        get() = sp.getInt("shape", 0)
-        set(v) { sp.edit().putInt("shape", v).apply() }
-    var cols: Int
-        get() = sp.getInt("cols", 5)
-        set(v) { sp.edit().putInt("cols", v).apply() }
-    var rows: Int
-        get() = sp.getInt("rows", 5)
-        set(v) { sp.edit().putInt("rows", v).apply() }
-    var pack: String
-        get() = sp.getString("pack", "") ?: ""
-        set(v) { sp.edit().putString("pack", v).apply() }
-    var desk: String
-        get() = sp.getString("desk", "") ?: ""
-        set(v) { sp.edit().putString("desk", v).apply() }
+    private fun int(k: String, d: Int): ReadWriteProperty<Any?, Int> = object : ReadWriteProperty<Any?, Int> {
+        override fun getValue(thisRef: Any?, property: KProperty<*>): Int = sp.getInt(k, d)
+        override fun setValue(thisRef: Any?, property: KProperty<*>, value: Int) { sp.edit().putInt(k, value).apply() }
+    }
 
-    fun listen(cb: () -> Unit) {
+    private fun str(k: String): ReadWriteProperty<Any?, String> = object : ReadWriteProperty<Any?, String> {
+        override fun getValue(thisRef: Any?, property: KProperty<*>): String = sp.getString(k, "") ?: ""
+        override fun setValue(thisRef: Any?, property: KProperty<*>, value: String) { sp.edit().putString(k, value).apply() }
+    }
+
+    var radius by int("radius", 40)
+    var speed by int("speed", 340)
+    var pause by int("pause", 0)
+    var blur by int("blur", 0)
+    var blurR by int("blurR", 12)
+    var zoom by int("zoom", 8)
+    var curve by int("curve", 0)
+    var preset by int("preset", 0)
+    var shape by int("shape", 0)
+    var cols by int("cols", 5)
+    var rows by int("rows", 5)
+    var pack by str("pack")
+    var desk by str("desk")
+    var lang by str("lang")
+
+    // radius, speed, pause, blur, blurR, zoom, curve
+    fun applyPreset(i: Int) {
+        val d = when (i) {
+            1 -> intArrayOf(32, 420, 0, 1, 16, 6, 1)
+            2 -> intArrayOf(44, 400, 0, 0, 12, -10, 2)
+            else -> intArrayOf(40, 340, 0, 0, 12, 8, 0)
+        }
+        preset = i
+        radius = d[0]
+        speed = d[1]
+        pause = d[2]
+        blur = d[3]
+        blurR = d[4]
+        zoom = d[5]
+        curve = d[6]
+    }
+
+    fun listen(cb: (String) -> Unit) {
         val x = SharedPreferences.OnSharedPreferenceChangeListener { _, k ->
-            if (k == "shape" || k == "cols" || k == "rows" || k == "pack") cb()
+            if (k == "shape" || k == "cols" || k == "rows" || k == "pack" || k == "lang") cb(k)
         }
         l = x
         sp.registerOnSharedPreferenceChangeListener(x)
