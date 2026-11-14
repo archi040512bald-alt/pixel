@@ -7,7 +7,6 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
-import android.graphics.drawable.Drawable
 import android.view.View
 import android.view.animation.PathInterpolator
 
@@ -15,11 +14,13 @@ class WindowCard(c: Context) : View(c) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val box = RectF()
     private var from = RectF()
-    private var icon: Drawable? = null
+    private var src: View? = null
     private var t = 0f
     private var shown = false
     private val ease = PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
-    private val corner = 40f * c.resources.displayMetrics.density
+    private val density = c.resources.displayMetrics.density
+    var cornerDp = 40
+    var speed = 340
 
     init {
         visibility = INVISIBLE
@@ -45,19 +46,19 @@ class WindowCard(c: Context) : View(c) {
         va.start()
     }
 
-    fun expand(rect: RectF, ic: Drawable, half: () -> Unit) {
+    fun expand(rect: RectF, v: View, half: () -> Unit) {
         from = rect
-        icon = ic
+        src = v
         t = 0f
         shown = true
         visibility = VISIBLE
-        run(0f, 1f, 340, half) {}
+        run(0f, 1f, speed.toLong(), half) {}
     }
 
     fun collapse() {
         if (!shown) return
         shown = false
-        run(1f, 0f, 300, null) { visibility = INVISIBLE }
+        run(1f, 0f, (speed * 0.85f).toLong(), null) { visibility = INVISIBLE }
     }
 
     override fun onDraw(cv: Canvas) {
@@ -65,15 +66,14 @@ class WindowCard(c: Context) : View(c) {
         val h = height.toFloat()
         box.set(from.left * (1 - t), from.top * (1 - t),
             from.right + (w - from.right) * t, from.bottom + (h - from.bottom) * t)
-        val rad = from.width() * 0.3f * (1 - t) + corner * t
+        val rad = from.width() * 0.3f * (1 - t) + cornerDp * density * t
         paint.alpha = (255 * minOf(1f, t * 5f)).toInt()
         cv.drawRoundRect(box, rad, rad, paint)
-        val d = icon ?: return
-        val cx = box.centerX().toInt()
-        val cy = box.centerY().toInt()
-        val hw = (from.width() / 2).toInt()
-        val hh = (from.height() / 2).toInt()
-        d.setBounds(cx - hw, cy - hh, cx + hw, cy + hh)
-        d.draw(cv)
+        val v = src ?: return
+        if (v.width == 0) return
+        cv.save()
+        cv.translate(box.centerX() - v.width / 2f, box.centerY() - v.height / 2f)
+        v.draw(cv)
+        cv.restore()
     }
 }
