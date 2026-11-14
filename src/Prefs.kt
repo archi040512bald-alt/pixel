@@ -16,6 +16,12 @@ class Prefs(c: Context) {
     var shape: Int
         get() = sp.getInt("shape", 0)
         set(v) { sp.edit().putInt("shape", v).apply() }
+    var cols: Int
+        get() = sp.getInt("cols", 5)
+        set(v) { sp.edit().putInt("cols", v).apply() }
+    var rows: Int
+        get() = sp.getInt("rows", 5)
+        set(v) { sp.edit().putInt("rows", v).apply() }
     var desk: String
         get() = sp.getString("desk", "") ?: ""
         set(v) { sp.edit().putString("desk", v).apply() }
