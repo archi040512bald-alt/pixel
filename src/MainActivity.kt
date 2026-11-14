@@ -268,7 +268,7 @@ class MainActivity : HomeBase() {
         card.speed = if (land) prefs.landSpeed else prefs.speed
         card.curve = prefs.curve
         card.land = land
-        card.expand(rect, icon) {
+        card.expand(rect, sourceIcon(this, a, icon)) {
             val run = Runnable {
                 launching = false
                 pending = null
