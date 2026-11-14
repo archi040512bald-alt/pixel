@@ -8,6 +8,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
@@ -17,18 +18,23 @@ class LauncherApp(val label: String, val pkg: String, val cls: String, val icon:
 
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
+fun shapeNames(c: Context): List<String> = listOf(
+    L(c, "Системная", "System"), L(c, "Круг", "Circle"),
+    L(c, "Скруглённый квадрат", "Rounded square"), L(c, "Сквиркл", "Squircle"),
+    L(c, "Капля", "Teardrop"), L(c, "Квадрат", "Square"))
+
 fun queryApps(c: Context): List<LauncherApp> {
     val pm = c.packageManager
     val q = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
     val list = ArrayList<LauncherApp>()
     for (ri in pm.queryIntentActivities(q, 0)) {
-        if (ri.activityInfo.packageName == c.packageName) continue
-        list.add(LauncherApp(ri.loadLabel(pm).toString(), ri.activityInfo.packageName, ri.activityInfo.name, ri.loadIcon(pm)))
+        val pk = ri.activityInfo.packageName
+        if (pk == c.packageName) continue
+        val ic = IconPacks.icon(c, pk, ri.activityInfo.name) ?: ri.loadIcon(pm)
+        list.add(LauncherApp(ri.loadLabel(pm).toString(), pk, ri.activityInfo.name, ic))
     }
     return list.sortedBy { it.label.lowercase() }
 }
-
-val SHAPES = arrayOf("Системная", "Круг", "Скруглённый квадрат", "Сквиркл", "Капля", "Квадрат")
 
 class ShapedIcon(c: Context, private val d: Drawable, private val shape: Int) : View(c) {
     private val path = Path()
@@ -51,7 +57,7 @@ class ShapedIcon(c: Context, private val d: Drawable, private val shape: Int) : 
         val w = width
         val h = height
         if (shape != 0) cv.clipPath(path)
-        if (shape != 0 && d is AdaptiveIconDrawable) {
+        if (shape != 0 && Build.VERSION.SDK_INT >= 26 && d is AdaptiveIconDrawable) {
             val o = (w * 0.25f).toInt()
             val bg = d.background
             val fg = d.foreground
