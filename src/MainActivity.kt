@@ -20,14 +20,17 @@ import java.util.*
 class MainActivity : HomeBase() {
     private lateinit var grid: GridView
     private lateinit var dock: LinearLayout
+    private lateinit var search: TextView
+    private lateinit var col: LinearLayout
     private lateinit var card: WindowCard
     private lateinit var desk: Desk
     private lateinit var trash: TextView
     private var all = listOf<LauncherApp>()
     private var shown = listOf<LauncherApp>()
     private var dragApp: LauncherApp? = null
-    private var dragFromDesk = false
+    private var dragItem: DeskItem? = null
     private var launching = false
+    private var stopped = false
     private var pending: Runnable? = null
     private val rcv = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) { loadApps() }
@@ -48,12 +51,21 @@ class MainActivity : HomeBase() {
             window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
                 View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
         }
+        if (Build.VERSION.SDK_INT >= 29) {
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
     }
 
     @Suppress("DEPRECATION")
     private fun bottomOf(i: WindowInsets): Int =
         if (Build.VERSION.SDK_INT >= 30) i.getInsets(WindowInsets.Type.systemBars()).bottom
         else i.systemWindowInsetBottom
+
+    @Suppress("DEPRECATION")
+    private fun topOf(i: WindowInsets): Int =
+        if (Build.VERSION.SDK_INT >= 30) i.getInsets(WindowInsets.Type.systemBars()).top
+        else i.systemWindowInsetTop
 
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
@@ -64,16 +76,17 @@ class MainActivity : HomeBase() {
         setContentView(root)
 
         home = FrameLayout(this)
-        desk = Desk(this, prefs, { x, v -> launch(x, v) }, { x, v -> startDrag(x, v, true) })
-        home.addView(desk, FrameLayout.LayoutParams(-1, -1))
+        col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
         val glance = TextView(this)
         glance.text = SimpleDateFormat("EEE, d MMM", Locale.getDefault()).format(Date())
         glance.setTextColor(Color.WHITE)
         glance.textSize = 28f
-        glance.setPadding(dp(28), dp(72), 0, 0)
+        glance.setPadding(dp(28), dp(16), 0, dp(8))
+        desk = Desk(this, prefs, { x, v -> launch(x, v) }, { item, v -> startDrag(null, item, v) })
         dock = LinearLayout(this)
         dock.gravity = Gravity.CENTER
-        val search = TextView(this)
+        search = TextView(this)
         search.text = L(this, "G   Поиск", "G   Search")
         search.textSize = 16f
         search.setTextColor(0xFF444746.toInt())
@@ -81,19 +94,19 @@ class MainActivity : HomeBase() {
         search.setPadding(dp(24), 0, dp(24), 0)
         search.background = round(0xF2F1F3F4.toInt(), 28)
         search.setOnClickListener { animateTo(1f) }
+        col.addView(glance)
+        col.addView(desk, LinearLayout.LayoutParams(-1, 0, 1f))
+        col.addView(dock)
+        val slp = LinearLayout.LayoutParams(-1, dp(56))
+        slp.setMargins(dp(16), 0, dp(16), dp(16))
+        col.addView(search, slp)
+        home.addView(col, FrameLayout.LayoutParams(-1, -1))
         trash = TextView(this)
         trash.text = L(this, "Убрать с экрана", "Remove from screen")
         trash.setTextColor(Color.WHITE)
         trash.gravity = Gravity.CENTER
         trash.background = round(0x99000000.toInt(), 20)
         trash.visibility = View.GONE
-        home.addView(glance)
-        val kl = FrameLayout.LayoutParams(-1, dp(84), Gravity.BOTTOM)
-        kl.bottomMargin = dp(80)
-        home.addView(dock, kl)
-        val slp = FrameLayout.LayoutParams(-1, dp(56), Gravity.BOTTOM)
-        slp.setMargins(dp(16), 0, dp(16), dp(16))
-        home.addView(search, slp)
         val tlp = FrameLayout.LayoutParams(-1, dp(56), Gravity.TOP)
         tlp.setMargins(dp(24), dp(48), dp(24), 0)
         home.addView(trash, tlp)
@@ -155,19 +168,19 @@ class MainActivity : HomeBase() {
         home.setOnDragListener { _, e ->
             when (e.action) {
                 DragEvent.ACTION_DRAG_STARTED -> {
-                    trash.visibility = if (dragFromDesk) View.VISIBLE else View.GONE
-                    dragApp != null
+                    trash.visibility = if (dragItem != null) View.VISIBLE else View.GONE
+                    true
                 }
                 DragEvent.ACTION_DROP -> {
-                    val a = dragApp
-                    if (a != null) {
-                        if (dragFromDesk && e.y < dp(110)) desk.removeApp(a) else desk.drop(a, e.x, e.y)
-                    }
+                    val di = dragItem
+                    if (di != null && e.y < dp(110)) desk.removeItem(di)
+                    else desk.drop(dragApp, di, e.x - desk.left, e.y - desk.top)
                     true
                 }
                 DragEvent.ACTION_DRAG_ENDED -> {
                     trash.visibility = View.GONE
                     dragApp = null
+                    dragItem = null
                     desk.rebuild()
                     true
                 }
@@ -175,9 +188,8 @@ class MainActivity : HomeBase() {
             }
         }
         root.setOnApplyWindowInsetsListener { _, ins ->
-            val b = bottomOf(ins)
-            home.setPadding(0, 0, 0, b)
-            grid.setPadding(dp(8), dp(12), dp(8), b)
+            col.setPadding(0, topOf(ins), 0, bottomOf(ins))
+            grid.setPadding(dp(8), dp(12), dp(8), bottomOf(ins))
             ins
         }
         val f = IntentFilter()
@@ -185,22 +197,33 @@ class MainActivity : HomeBase() {
         f.addAction(Intent.ACTION_PACKAGE_REMOVED)
         f.addDataScheme("package")
         registerReceiver(rcv, f)
-        prefs.listen { k -> if (k == "lang") recreate() else { loadApps(); applyGrid() } }
+        prefs.listen { k -> if (k == "lang") recreate() else relayout() }
+        look()
         loadApps()
         root.post { applyProgress() }
     }
 
-    private fun applyGrid() {
+    private fun look() {
+        val lp = LinearLayout.LayoutParams(-1, dp(prefs.iconSize + 28))
+        lp.setMargins(dp(12), 0, dp(12), if (prefs.search == 1) dp(8) else dp(12))
+        dock.layoutParams = lp
+        dock.background = if (prefs.dockBg == 1) round(0x40FFFFFF, prefs.dockR) else null
+        search.visibility = if (prefs.search == 1) View.VISIBLE else View.GONE
+    }
+
+    private fun relayout() {
+        look()
         grid.numColumns = prefs.cols
+        loadApps()
         desk.reconfigure()
     }
 
-    private fun startDrag(a: LauncherApp, cell: View, fromDesk: Boolean) {
+    private fun startDrag(a: LauncherApp?, item: DeskItem?, cell: View) {
         dragApp = a
-        dragFromDesk = fromDesk
-        val data = ClipData.newPlainText("app", a.pkg)
+        dragItem = item
+        val data = ClipData.newPlainText("app", "x")
         cell.startDragAndDrop(data, View.DragShadowBuilder(cell), null, 0)
-        if (!fromDesk) animateTo(0f)
+        if (item == null) animateTo(0f)
     }
 
     private fun loadApps() {
@@ -227,7 +250,7 @@ class MainActivity : HomeBase() {
             override fun getItem(p: Int): Any = shown[p]
             override fun getItemId(p: Int) = p.toLong()
             override fun getView(p: Int, v: View?, g: ViewGroup?): View =
-                makeCell(this@MainActivity, shown[p], true, { x, cell -> startDrag(x, cell, false) }) { x, iv -> launch(x, iv) }
+                makeCell(this@MainActivity, shown[p], true, { x, cell -> startDrag(x, null, cell) }) { x, iv -> launch(x, iv) }
         }
     }
 
@@ -240,9 +263,11 @@ class MainActivity : HomeBase() {
             (loc[0] + icon.width).toFloat(), (loc[1] + icon.height).toFloat())
         val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(a.pkg, a.cls)
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        val land = a.land && prefs.landOn == 1
         card.cornerDp = prefs.radius
-        card.speed = prefs.speed
+        card.speed = if (land) prefs.landSpeed else prefs.speed
         card.curve = prefs.curve
+        card.land = land
         card.expand(rect, icon) {
             val run = Runnable {
                 launching = false
@@ -251,18 +276,13 @@ class MainActivity : HomeBase() {
                     startActivity(i, ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle())
                 } catch (e: Exception) {
                     card.cancel()
-                    restoreHome()
+                    Fx.back(this, prefs, home, drawer, progress)
                 }
             }
             pending = run
             home.postDelayed(run, prefs.pause.toLong())
         }
-        val t: View = if (progress > 0.5f) drawer else home
-        Fx.out(this, prefs, t, home)
-    }
-
-    private fun restoreHome() {
-        Fx.back(this, prefs, home, drawer, progress)
+        Fx.out(this, prefs, home, home)
     }
 
     private fun cancelLaunch(): Boolean {
@@ -272,12 +292,14 @@ class MainActivity : HomeBase() {
         if (p != null) home.removeCallbacks(p)
         pending = null
         card.cancel()
-        restoreHome()
+        Fx.back(this, prefs, home, drawer, progress)
         return true
     }
 
     override fun onNewIntent(intent: Intent?) {
-        if (!cancelLaunch()) super.onNewIntent(intent)
+        if (cancelLaunch()) return
+        if (stopped) return
+        super.onNewIntent(intent)
     }
 
     @Deprecated("Deprecated in Java")
@@ -285,8 +307,14 @@ class MainActivity : HomeBase() {
         if (!cancelLaunch()) super.onBackPressed()
     }
 
+    override fun onStop() {
+        super.onStop()
+        stopped = true
+    }
+
     override fun onResume() {
         super.onResume()
+        stopped = false
         if (::card.isInitialized) card.collapse()
     }
 
