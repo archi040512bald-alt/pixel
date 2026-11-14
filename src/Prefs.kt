@@ -30,11 +30,17 @@ class Prefs(c: Context) {
     var shape by int("shape", 0)
     var cols by int("cols", 5)
     var rows by int("rows", 5)
+    var dockBg by int("dockBg", 0)
+    var dockR by int("dockR", 28)
+    var iconSize by int("iconSize", 56)
+    var labels by int("labels", 1)
+    var search by int("search", 1)
+    var landOn by int("landOn", 1)
+    var landSpeed by int("landSpeed", 600)
     var pack by str("pack")
     var desk by str("desk")
     var lang by str("lang")
 
-    // radius, speed, pause, blur, blurR, zoom, curve
     fun applyPreset(i: Int) {
         val d = when (i) {
             1 -> intArrayOf(32, 420, 0, 1, 16, 6, 1)
@@ -52,8 +58,9 @@ class Prefs(c: Context) {
     }
 
     fun listen(cb: (String) -> Unit) {
+        val keys = setOf("shape", "cols", "rows", "pack", "lang", "dockBg", "dockR", "iconSize", "labels", "search")
         val x = SharedPreferences.OnSharedPreferenceChangeListener { _, k ->
-            if (k == "shape" || k == "cols" || k == "rows" || k == "pack" || k == "lang") cb(k)
+            if (k != null && k in keys) cb(k)
         }
         l = x
         sp.registerOnSharedPreferenceChangeListener(x)
