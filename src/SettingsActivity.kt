@@ -199,6 +199,7 @@ class SettingsActivity : AppCompatActivity() {
         head(l("Горизонтальные приложения", "Landscape apps"))
         toggle(l("Особая анимация", "Special animation"), p.landOn == 1) { p.landOn = if (it) 1 else 0 }
         slider(l("Длительность", "Duration"), 300, 1200, p.landSpeed, l(" мс", " ms")) { p.landSpeed = it }
+        slider(l("Радиус углов", "Corner radius"), 0, 60, p.landR, " dp") { p.landR = it }
     }
 
     private fun icons() {
