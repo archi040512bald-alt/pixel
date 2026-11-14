@@ -14,6 +14,7 @@ jobs:
           D=proj/app/src/main
           mkdir -p $D/java/com/example/pixellauncher
           cp src/*.kt $D/java/com/example/pixellauncher/
+          sed -i 's/setProgress(/animateTo(/g' $D/java/com/example/pixellauncher/*.kt
           cp src/AndroidManifest.xml $D/
           cp src/app.gradle.kts proj/app/build.gradle.kts
           printf '%s\n' 'pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }' 'dependencyResolutionManagement { repositories { google(); mavenCentral() } }' 'rootProject.name = "PixelLauncher"' 'include(":app")' > proj/settings.gradle.kts
