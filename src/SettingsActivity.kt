@@ -75,7 +75,9 @@ class SettingsActivity : AppCompatActivity() {
                 val codes = arrayOf("", "ru", "en")
                 radios(listOf(l("Системный", "System"), "Русский", "English"), codes.indexOf(p.lang).coerceAtLeast(0)) {
                     p.lang = codes[it]
-                    recreate()
+                    val i = Intent(this, SettingsActivity::class.java)
+                    i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    startActivity(i)
                 }
             }
             else -> {
