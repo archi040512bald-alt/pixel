@@ -23,6 +23,7 @@ class WindowCard(c: Context) : View(c) {
     var cornerDp = 40
     var speed = 340
     var curve = 0
+    var land = false
 
     init {
         visibility = INVISIBLE
@@ -79,16 +80,24 @@ class WindowCard(c: Context) : View(c) {
     override fun onDraw(cv: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        box.set(from.left * (1 - t), from.top * (1 - t),
-            from.right + (w - from.right) * t, from.bottom + (h - from.bottom) * t)
+        val fw = if (land) h else w
+        val fh = if (land) w else h
+        val cx = from.centerX() + (w / 2f - from.centerX()) * t
+        val cy = from.centerY() + (h / 2f - from.centerY()) * t
+        val bw = from.width() + (fw - from.width()) * t
+        val bh = from.height() + (fh - from.height()) * t
         val rad = maxOf(0f, from.width() * 0.3f * (1 - t) + cornerDp * density * t)
         paint.alpha = (255 * minOf(1f, maxOf(0f, t * 5f))).toInt()
-        cv.drawRoundRect(box, rad, rad, paint)
-        val v = src ?: return
-        if (v.width == 0) return
         cv.save()
-        cv.translate(box.centerX() - v.width / 2f, box.centerY() - v.height / 2f)
-        v.draw(cv)
+        cv.translate(cx, cy)
+        if (land) cv.rotate(90f * t)
+        box.set(-bw / 2f, -bh / 2f, bw / 2f, bh / 2f)
+        cv.drawRoundRect(box, rad, rad, paint)
+        val v = src
+        if (v != null && v.width > 0) {
+            cv.translate(-v.width / 2f, -v.height / 2f)
+            v.draw(cv)
+        }
         cv.restore()
     }
 }
