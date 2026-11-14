@@ -1,4 +1,4 @@
-package com.pixel.launcher
+package com.example.pixellauncher
 
 import android.content.Intent
 import android.graphics.drawable.Drawable
@@ -56,13 +56,11 @@ fun LauncherScreen() {
     var showAppDrawer by remember { mutableStateOf(false) }
     var isLaunching by remember { mutableStateOf(false) }
     
-    // Анимации
     val homeScale = remember { Animatable(1f) }
     val homeAlpha = remember { Animatable(1f) }
     
     val time = remember { mutableStateOf(getCurrentTime()) }
 
-    // Таймер
     LaunchedEffect(Unit) {
         while (true) {
             time.value = getCurrentTime()
@@ -70,7 +68,6 @@ fun LauncherScreen() {
         }
     }
 
-    // Загрузка приложений
     LaunchedEffect(Unit) {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN, null).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
@@ -84,7 +81,6 @@ fun LauncherScreen() {
         }.sortedBy { it.label.lowercase() }
     }
 
-    // Анимация возврата домой
     LaunchedEffect(isLaunching) {
         if (!isLaunching) {
             homeScale.snapTo(0.9f)
@@ -98,7 +94,6 @@ fun LauncherScreen() {
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         
-        // ГЛАВНЫЙ ЭКРАН
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -128,7 +123,6 @@ fun LauncherScreen() {
             )
         }
 
-        // МЕНЮ ПРИЛОЖЕНИЙ (ВЫЕЗЖАЕТ СНИЗУ)
         AnimatedVisibility(
             visible = showAppDrawer,
             enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(250, easing = FastOutSlowInEasing)) + fadeIn(),
@@ -153,15 +147,12 @@ fun LauncherScreen() {
                                 modifier = Modifier.clickable {
                                     isLaunching = true
                                     scope.launch {
-                                        // Параллельная анимация: Home уходит, иконка растет
                                         homeScale.animateTo(1.3f, tween(200, easing = FastOutLinearInEasing))
                                         homeAlpha.animateTo(0f, tween(150))
                                         
-                                        // Запускаем приложение
                                         val launchIntent = context.packageManager.getLaunchIntentForPackage(app.packageName)
                                         context.startActivity(launchIntent)
                                         
-                                        // Ждем и возвращаем все обратно (когда вернемся домой)
                                         kotlinx.coroutines.delay(500)
                                         showAppDrawer = false 
                                         isLaunching = false
