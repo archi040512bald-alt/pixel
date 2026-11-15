@@ -1,5 +1,6 @@
 package com.example.pixellauncher
 
+import android.animation.ValueAnimator
 import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Canvas
@@ -9,14 +10,21 @@ import android.graphics.RectF
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.os.SystemClock
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.LinearLayout
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.roundToInt
 
-class DeskItem(var col: Int, var row: Int, var folder: Boolean, var name: String, val keys: MutableList<String>)
+class DeskItem(var col: Int, var row: Int, var folder: Boolean, var name: String,
+               val keys: MutableList<String>, var page: Int = 0)
 
 class FolderIcon(c: Context, private val icons: List<Drawable>) : View(c) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -46,15 +54,26 @@ class Desk(c: Context, private val prefs: Prefs,
            private val onDrag: (DeskItem, View) -> Unit) : FrameLayout(c) {
     val items = ArrayList<DeskItem>()
     private var apps = listOf<LauncherApp>()
+    var hide: Set<String> = emptySet()
+    var sink: ((MotionEvent) -> Boolean)? = null
+    var isSwiping: () -> Boolean = { false }
+    var onPage: ((Int, Float) -> Unit)? = null
+    var frac = 0f
+        private set
+    private var tempPages = 1
+    private var flipAt = 0L
+    private var fwd = 0L
+    private var snapAnim: ValueAnimator? = null
 
     init {
         for (s in prefs.desk.split(";")) {
             val p = s.split("|")
-            if (p.size == 5) {
+            if (p.size >= 5) {
                 val col = p[0].toIntOrNull()
                 val row = p[1].toIntOrNull()
                 if (col != null && row != null) {
-                    items.add(DeskItem(col, row, p[2] == "F", p[3], p[4].split(",").filter { it.isNotEmpty() }.toMutableList()))
+                    val pg = if (p.size > 5) (p[5].toIntOrNull() ?: 0) else 0
+                    items.add(DeskItem(col, row, p[2] == "F", p[3], p[4].split(",").filter { it.isNotEmpty() }.toMutableList(), pg))
                 }
             }
         }
@@ -63,7 +82,7 @@ class Desk(c: Context, private val prefs: Prefs,
     private fun save() {
         prefs.desk = items.joinToString(";") {
             it.col.toString() + "|" + it.row + "|" + (if (it.folder) "F" else "A") + "|" +
-                it.name.replace(Regex("[;|,]"), " ") + "|" + it.keys.joinToString(",")
+                it.name.replace(Regex("[;|,]"), " ") + "|" + it.keys.joinToString(",") + "|" + it.page
         }
     }
 
@@ -71,34 +90,128 @@ class Desk(c: Context, private val prefs: Prefs,
     private fun minCell(): Int = context.dp(prefs.iconSize + (if (prefs.labels == 1) 38 else 18))
     private fun rowsEff(): Int = minOf(prefs.rows, maxOf(1, height / minCell()))
 
+    fun pages(): Int = maxOf(1, tempPages, (items.maxOfOrNull { it.page } ?: 0) + 1)
+    fun page(): Int = frac.roundToInt().coerceIn(0, pages() - 1)
+
+    fun setFrac(f: Float) {
+        frac = f.coerceIn(0f, (pages() - 1).toFloat())
+        applyScroll()
+        onPage?.invoke(pages(), frac)
+    }
+
+    private fun applyScroll() {
+        for (i in 0 until childCount) {
+            val v = getChildAt(i)
+            val item = v.tag as DeskItem
+            val off = item.page - frac
+            v.translationX = off * width
+            v.visibility = if (abs(off) < 1.05f) View.VISIBLE else View.INVISIBLE
+        }
+    }
+
+    fun goTo(p: Int) {
+        snapAnim?.cancel()
+        val target = p.coerceIn(0, pages() - 1).toFloat()
+        val va = ValueAnimator.ofFloat(frac, target)
+        va.duration = 280
+        va.interpolator = curveOf(0)
+        va.addUpdateListener { setFrac(it.animatedValue as Float) }
+        snapAnim = va
+        va.start()
+    }
+
+    fun snap(vx: Float) {
+        val t = when {
+            vx < -700f -> floor(frac) + 1f
+            vx > 700f -> ceil(frac) - 1f
+            else -> frac.roundToInt().toFloat()
+        }
+        goTo(t.toInt())
+    }
+
+    fun edgeHover(x: Float) {
+        val now = SystemClock.uptimeMillis()
+        if (now - flipAt < 700) return
+        val edge = context.dp(36)
+        if (x < edge && page() > 0) {
+            flipAt = now
+            goTo(page() - 1)
+        } else if (x > width - edge) {
+            val p = page()
+            if (p >= pages() - 1) {
+                if (pages() >= 20 || items.none { it.page == p }) return
+                tempPages = p + 2
+            }
+            flipAt = now
+            goTo(p + 1)
+        }
+    }
+
+    fun endDrag() {
+        tempPages = 1
+        goTo(minOf(page(), pages() - 1))
+    }
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        val s = sink ?: return false
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) fwd = ev.downTime
+        s(ev)
+        return isSwiping()
+    }
+
+    override fun onTouchEvent(ev: MotionEvent): Boolean {
+        val s = sink ?: return false
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN && ev.downTime == fwd) return true
+        s(ev)
+        return true
+    }
+
     fun setApps(list: List<LauncherApp>) {
         apps = list
         rebuild()
     }
 
-    private fun free(col: Int, row: Int, skip: DeskItem?): IntArray? {
-        var best: IntArray? = null
-        var bd = Int.MAX_VALUE
-        for (rr in 0 until rowsEff()) {
-            for (cc in 0 until prefs.cols) {
-                if (items.any { it !== skip && it.col == cc && it.row == rr }) continue
-                val d = (rr - row) * (rr - row) + (cc - col) * (cc - col)
-                if (d < bd) {
-                    bd = d
-                    best = intArrayOf(cc, rr)
+    private fun free(col: Int, row: Int, page: Int, skip: DeskItem?): IntArray {
+        var pg = page
+        while (true) {
+            var best: IntArray? = null
+            var bd = Int.MAX_VALUE
+            for (rr in 0 until rowsEff()) {
+                for (cc in 0 until prefs.cols) {
+                    if (items.any { it !== skip && it.page == pg && it.col == cc && it.row == rr }) continue
+                    val d = (rr - row) * (rr - row) + (cc - col) * (cc - col)
+                    if (d < bd) {
+                        bd = d
+                        best = intArrayOf(cc, rr, pg)
+                    }
                 }
             }
+            if (best != null) return best
+            pg++
         }
-        return best
+    }
+
+    private fun nextFree(): IntArray {
+        var pg = 0
+        while (true) {
+            for (rr in 0 until rowsEff()) {
+                for (cc in 0 until prefs.cols) {
+                    if (items.none { it.page == pg && it.col == cc && it.row == rr }) return intArrayOf(cc, rr, pg)
+                }
+            }
+            pg++
+        }
     }
 
     fun reconfigure() {
+        if (height == 0) return
         val old = items.toList()
         items.clear()
         for (x in old) {
-            val pos = free(x.col, x.row, null) ?: continue
+            val pos = free(x.col, x.row, x.page, null)
             x.col = pos[0]
             x.row = pos[1]
+            x.page = pos[2]
             items.add(x)
         }
         save()
@@ -119,6 +232,18 @@ class Desk(c: Context, private val prefs: Prefs,
             if (x.keys.isEmpty()) gone.add(x) else if (x.keys.size == 1) x.folder = false
         }
         items.removeAll(gone)
+        if (prefs.drawer == 0 && height > 0) {
+            val have = HashSet<String>()
+            for (x in items) have.addAll(x.keys)
+            var added = false
+            for (a in apps) {
+                if (a.key in have || a.pkg in hide) continue
+                val pos = nextFree()
+                items.add(DeskItem(pos[0], pos[1], false, "", mutableListOf(a.key), pos[2]))
+                added = true
+            }
+            if (added) save()
+        }
         for (item in items) {
             val v: View = if (item.folder) folderCell(item) else {
                 val a = find(item.keys[0])!!
@@ -127,7 +252,10 @@ class Desk(c: Context, private val prefs: Prefs,
             v.tag = item
             addView(v)
         }
+        frac = frac.coerceIn(0f, (pages() - 1).toFloat())
         requestLayout()
+        applyScroll()
+        onPage?.invoke(pages(), frac)
     }
 
     private fun folderCell(item: DeskItem): View {
@@ -205,8 +333,8 @@ class Desk(c: Context, private val prefs: Prefs,
 
     private fun takeOut(item: DeskItem, a: LauncherApp) {
         item.keys.remove(a.key)
-        val pos = free(item.col, item.row, null)
-        if (pos != null) items.add(DeskItem(pos[0], pos[1], false, "", mutableListOf(a.key)))
+        val pos = free(item.col, item.row, item.page, null)
+        items.add(DeskItem(pos[0], pos[1], false, "", mutableListOf(a.key), pos[2]))
         save()
         post { rebuild() }
     }
@@ -221,6 +349,7 @@ class Desk(c: Context, private val prefs: Prefs,
                 MeasureSpec.makeMeasureSpec(rh, MeasureSpec.EXACTLY))
             v.layout(item.col * cw, item.row * rh, (item.col + 1) * cw, (item.row + 1) * rh)
         }
+        applyScroll()
     }
 
     fun drop(app: LauncherApp?, item: DeskItem?, x: Float, y: Float) {
@@ -228,13 +357,14 @@ class Desk(c: Context, private val prefs: Prefs,
         val rh = (height / rowsEff()).coerceAtLeast(1)
         val col = (x / cw).toInt().coerceIn(0, prefs.cols - 1)
         val row = (y / rh).toInt().coerceIn(0, rowsEff() - 1)
+        val pg = page()
         var found = item
         if (found == null && app != null) {
             found = items.firstOrNull { !it.folder && it.keys[0] == app.key }
-            if (found == null) found = DeskItem(col, row, false, "", mutableListOf(app.key))
+            if (found == null) found = DeskItem(col, row, false, "", mutableListOf(app.key), pg)
         }
         val d = found ?: return
-        val target = items.firstOrNull { it !== d && it.col == col && it.row == row }
+        val target = items.firstOrNull { it !== d && it.page == pg && it.col == col && it.row == row }
         if (target != null && !d.folder) {
             if (!target.folder) {
                 target.folder = true
@@ -243,9 +373,10 @@ class Desk(c: Context, private val prefs: Prefs,
             target.keys.add(d.keys[0])
             items.remove(d)
         } else {
-            val pos = free(col, row, d) ?: return
+            val pos = free(col, row, pg, d)
             d.col = pos[0]
             d.row = pos[1]
+            d.page = pos[2]
             if (!items.contains(d)) items.add(d)
         }
         save()
