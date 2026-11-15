@@ -11,6 +11,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.view.View
 import android.view.animation.Interpolator
+import android.view.animation.PathInterpolator
 
 class WindowCard(c: Context) : View(c) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -20,9 +21,12 @@ class WindowCard(c: Context) : View(c) {
     private var t = 0f
     private var shown = false
     private var hyper = false
+    private var reach = 50
+    private var a0 = 0f
     private var tint = 0xFF121214.toInt()
     private var anim: ValueAnimator? = null
     private var ease: Interpolator = curveOf(0)
+    private val soft = PathInterpolator(0.4f, 0f, 0.2f, 1f)
     private val density = c.resources.displayMetrics.density
     var cornerDp = 40
     var speed = 340
@@ -30,6 +34,16 @@ class WindowCard(c: Context) : View(c) {
     var land = false
 
     init { visibility = INVISIBLE }
+
+    private fun easeFor(): Interpolator {
+        val base = curveOf(curve)
+        val k = ((50 - reach) / 50f).coerceIn(0f, 1f)
+        if (k <= 0f) return base
+        return Interpolator { x ->
+            val e = base.getInterpolation(x)
+            e + (soft.getInterpolation(x) - e) * k
+        }
+    }
 
     private fun run(a: Float, b: Float, ms: Long, half: (() -> Unit)?, end: () -> Unit) {
         anim?.cancel()
@@ -86,20 +100,23 @@ class WindowCard(c: Context) : View(c) {
     }
 
     fun expand(rect: RectF, v: View, half: () -> Unit) {
-        hyper = Prefs(context).preset == 1
+        val p = Prefs(context)
+        hyper = p.preset == 1
+        reach = p.reach
+        a0 = reach / 100f * 0.92f
         if (hyper) tint = tintOf(v)
         from = rect
         src = v
         t = 0f
         shown = true
-        ease = curveOf(curve)
+        ease = easeFor()
         run(0f, 1f, speed.toLong(), half) {}
     }
 
     fun collapse() {
         if (!shown) return
         shown = false
-        ease = curveOf(curve)
+        ease = easeFor()
         run(t, 0f, (speed * 0.85f).toLong(), null) { visibility = INVISIBLE }
     }
 
@@ -117,18 +134,20 @@ class WindowCard(c: Context) : View(c) {
     private fun drawStd(cv: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
+        val g = a0 + (1f - a0) * t
+        val gc = g.coerceIn(0f, 1f)
         val fw = if (land) h else w
         val fh = if (land) w else h
-        val cx = from.centerX() + (w / 2f - from.centerX()) * t
-        val cy = from.centerY() + (h / 2f - from.centerY()) * t
-        val bw = from.width() + (fw - from.width()) * t
-        val bh = from.height() + (fh - from.height()) * t
-        val rad = maxOf(0f, from.width() * 0.3f * (1 - t) + cornerDp * density * t)
+        val cx = from.centerX() + (w / 2f - from.centerX()) * g
+        val cy = from.centerY() + (h / 2f - from.centerY()) * g
+        val bw = from.width() + (fw - from.width()) * g
+        val bh = from.height() + (fh - from.height()) * g
+        val rad = maxOf(0f, from.width() * 0.3f * (1 - gc) + cornerDp * density * gc)
         paint.color = 0xFF202124.toInt()
-        paint.alpha = (255 * minOf(1f, maxOf(0f, t * 5f))).toInt()
+        paint.alpha = (255 * minOf(1f, maxOf(0f, t * (5f + 20f * a0)))).toInt()
         cv.save()
         cv.translate(cx, cy)
-        if (land) cv.rotate(90f * t)
+        if (land) cv.rotate(90f * gc)
         box.set(-bw / 2f, -bh / 2f, bw / 2f, bh / 2f)
         cv.drawRoundRect(box, rad, rad, paint)
         val v = src
@@ -148,18 +167,20 @@ class WindowCard(c: Context) : View(c) {
         val w = width.toFloat()
         val h = height.toFloat()
         val tc = t.coerceIn(0f, 1f)
+        val g = a0 + (1f - a0) * t
+        val gc = g.coerceIn(0f, 1f)
         val fw = if (land) h else w
         val fh = if (land) w else h
-        val cx = from.centerX() + (w / 2f - from.centerX()) * t
-        val cy = from.centerY() + (h / 2f - from.centerY()) * t
-        val bw = from.width() + (fw - from.width()) * t
-        val bh = from.height() + (fh - from.height()) * t
-        val rad = maxOf(0f, from.width() * 0.3f * (1 - tc) + cornerDp * density * tc)
+        val cx = from.centerX() + (w / 2f - from.centerX()) * g
+        val cy = from.centerY() + (h / 2f - from.centerY()) * g
+        val bw = from.width() + (fw - from.width()) * g
+        val bh = from.height() + (fh - from.height()) * g
+        val rad = maxOf(0f, from.width() * 0.3f * (1 - gc) + cornerDp * density * gc)
         paint.color = tint
-        paint.alpha = (255 * minOf(1f, tc * 6f)).toInt()
+        paint.alpha = (255 * minOf(1f, tc * (6f + 20f * a0))).toInt()
         cv.save()
         cv.translate(cx, cy)
-        if (land) cv.rotate(90f * tc)
+        if (land) cv.rotate(90f * gc)
         box.set(-bw / 2f, -bh / 2f, bw / 2f, bh / 2f)
         cv.drawRoundRect(box, rad, rad, paint)
         cv.restore()
