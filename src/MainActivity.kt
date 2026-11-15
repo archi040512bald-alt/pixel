@@ -28,6 +28,8 @@ class MainActivity : HomeBase() {
     private lateinit var desk: Desk
     private lateinit var trash: TextView
     private lateinit var menu: AppMenu
+    private lateinit var edit: EditOverlay
+    private lateinit var pinch: ScaleGestureDetector
     private var all = listOf<LauncherApp>()
     private var shown = listOf<LauncherApp>()
     private var dragApp: LauncherApp? = null
@@ -35,6 +37,8 @@ class MainActivity : HomeBase() {
     private var moved = false
     private var ox = 0f
     private var oy = 0f
+    private var span0 = 0f
+    private var editing = false
     private var launching = false
     private var stopped = false
     private var pending: Runnable? = null
@@ -74,10 +78,18 @@ class MainActivity : HomeBase() {
         else i.systemWindowInsetTop
 
     override fun pagingAllowed(): Boolean = progress == 0f
-    override fun drawerAllowed(): Boolean = prefs.drawer == 1
+    override fun drawerAllowed(): Boolean = prefs.drawer == 1 && !editing
     override fun pageStart(): Float = if (::desk.isInitialized) desk.frac else 0f
     override fun pageMove(f: Float) = desk.setFrac(f)
     override fun pageEnd(vx: Float) = desk.snap(vx)
+
+    private fun homePage(): Int = getSharedPreferences("launcher", MODE_PRIVATE).getInt("homePage", 0)
+
+    private fun openSettings(screen: String?) {
+        val i = Intent(this, SettingsActivity::class.java)
+        if (screen != null) i.putExtra("s", screen)
+        startActivity(i)
+    }
 
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
@@ -104,12 +116,14 @@ class MainActivity : HomeBase() {
         dock.gravity = Gravity.CENTER
         search = SearchBar(this)
         search.setOnClickListener {
-            if (prefs.drawer == 1) {
-                animateTo(1f)
-            } else {
-                try {
-                    startActivity(Intent(Intent.ACTION_WEB_SEARCH).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                } catch (e: Exception) {
+            if (!editing) {
+                if (prefs.drawer == 1) {
+                    animateTo(1f)
+                } else {
+                    try {
+                        startActivity(Intent(Intent.ACTION_WEB_SEARCH).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e: Exception) {
+                    }
                 }
             }
         }
@@ -171,25 +185,60 @@ class MainActivity : HomeBase() {
         dlp.topMargin = dp(40)
         root.addView(drawer, dlp)
 
+        edit = EditOverlay(this, desk)
+        root.addView(edit, FrameLayout.LayoutParams(-1, -1))
+        edit.onDone = { exitEdit() }
+        edit.onWall = {
+            exitEdit()
+            openSettings("wall")
+        }
+        edit.onHome = {
+            getSharedPreferences("launcher", MODE_PRIVATE).edit().putInt("homePage", desk.page()).apply()
+            Toast.makeText(this, L(this, "Страница " + (desk.page() + 1) + " теперь главная",
+                "Page " + (desk.page() + 1) + " is now the home page"), Toast.LENGTH_SHORT).show()
+        }
+        edit.onWidgets = {
+            Toast.makeText(this, L(this, "Виджеты скоро", "Widgets are coming soon"), Toast.LENGTH_SHORT).show()
+        }
+        edit.onSettings = {
+            exitEdit()
+            openSettings(null)
+        }
+        edit.onRemove = {
+            for (i in edit.badges.picked.toList()) desk.removeItem(i)
+            edit.badges.picked.clear()
+            edit.updateRemove(0, false)
+            edit.badges.invalidate()
+        }
+        edit.badges.onChange = { edit.updateRemove(edit.badges.picked.size, prefs.drawer == 1) }
+
         card = WindowCard(this)
         root.addView(card, FrameLayout.LayoutParams(-1, -1))
         menu = AppMenu(this, root)
         menu.targets = listOf(home, drawer)
 
-        val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onLongPress(e: MotionEvent) {
-                showPopup(this@MainActivity, home, e.rawX.toInt(), e.rawY.toInt()) {
-                    startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
-                }
+        pinch = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScaleBegin(d: ScaleGestureDetector): Boolean {
+                span0 = d.currentSpan
+                return true
+            }
+
+            override fun onScale(d: ScaleGestureDetector): Boolean {
+                if (!editing && progress == 0f && !launching && span0 > 0f && d.currentSpan / span0 < 0.8f) enterEdit()
+                return true
             }
         })
         val handler: (MotionEvent) -> Boolean = { e ->
-            gd.onTouchEvent(e)
-            onSwipe(e)
+            pinch.onTouchEvent(e)
+            if (e.pointerCount > 1 || pinch.isInProgress) true else onSwipe(e)
         }
         desk.sink = handler
-        desk.isSwiping = { swiping() }
-        desk.onPage = { n, f -> dots.set(n, f) }
+        desk.isSwiping = { swiping() || pinch.isInProgress }
+        desk.onPage = { n, f ->
+            dots.set(n, f)
+            edit.page(n, f)
+            edit.badges.invalidate()
+        }
         home.setOnTouchListener { _, e -> handler(e) }
         header.setOnTouchListener { _, e -> onSwipe(e) }
         root.setOnDragListener { _, e ->
@@ -199,7 +248,7 @@ class MainActivity : HomeBase() {
                     if (!moved && hypot(e.x - ox, e.y - oy) > dp(24)) {
                         moved = true
                         menu.hide()
-                        if (dragItem != null && prefs.drawer == 1) trash.visibility = View.VISIBLE
+                        if (dragItem != null && prefs.drawer == 1 && !editing) trash.visibility = View.VISIBLE
                         if (dragApp != null) animateTo(0f)
                     }
                     if (moved) desk.edgeHover(e.x)
@@ -208,7 +257,7 @@ class MainActivity : HomeBase() {
                 DragEvent.ACTION_DROP -> {
                     if (moved) {
                         val di = dragItem
-                        if (di != null && prefs.drawer == 1 && e.y < dp(110)) desk.removeItem(di)
+                        if (di != null && prefs.drawer == 1 && e.y < dp(110) && !editing) desk.removeItem(di)
                         else desk.drop(dragApp, di, e.x - desk.left, e.y - desk.top)
                     }
                     true
@@ -227,6 +276,7 @@ class MainActivity : HomeBase() {
         root.setOnApplyWindowInsetsListener { _, ins ->
             col.setPadding(0, topOf(ins), 0, bottomOf(ins))
             grid.setPadding(dp(8), dp(12), dp(8), bottomOf(ins))
+            edit.setInsets(topOf(ins), bottomOf(ins))
             ins
         }
         val f = IntentFilter()
@@ -237,7 +287,27 @@ class MainActivity : HomeBase() {
         prefs.listen { k -> if (k == "lang") recreate() else relayout() }
         look()
         loadApps()
-        root.post { applyProgress() }
+        root.post {
+            applyProgress()
+            desk.setFrac(homePage().toFloat())
+        }
+    }
+
+    private fun enterEdit() {
+        editing = true
+        menu.hide()
+        edit.badges.picked.clear()
+        edit.updateRemove(0, false)
+        edit.show()
+        for (v in listOf(col.getChildAt(0), dots, dock, search)) v.animate().alpha(0f).setDuration(200).start()
+    }
+
+    private fun exitEdit() {
+        if (!editing) return
+        editing = false
+        edit.hide()
+        edit.badges.picked.clear()
+        for (v in listOf(col.getChildAt(0), dots, dock, search)) v.animate().alpha(1f).setDuration(220).start()
     }
 
     private fun look() {
@@ -272,7 +342,11 @@ class MainActivity : HomeBase() {
         val app = a ?: (item?.let { if (it.folder) null else all.firstOrNull { x -> x.key == it.keys[0] } }) ?: return
         var remove: (() -> Unit)? = null
         if (item != null && prefs.drawer == 1) remove = { desk.removeItem(item) }
-        menu.show(app, cell, remove)
+        try {
+            menu.show(app, cell, remove)
+        } catch (e: Throwable) {
+            Toast.makeText(this, e.toString(), Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun loadApps() {
@@ -312,7 +386,7 @@ class MainActivity : HomeBase() {
     }
 
     private fun launch(a: LauncherApp, icon: View) {
-        if (launching) return
+        if (launching || editing) return
         launching = true
         val loc = IntArray(2)
         icon.getLocationOnScreen(loc)
@@ -355,15 +429,24 @@ class MainActivity : HomeBase() {
 
     override fun onNewIntent(intent: Intent?) {
         if (::menu.isInitialized && menu.showing) menu.hide()
+        if (editing) {
+            exitEdit()
+            return
+        }
         if (cancelLaunch()) return
         if (stopped) return
         super.onNewIntent(intent)
+        if (::desk.isInitialized) desk.goTo(homePage())
     }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (::menu.isInitialized && menu.showing) {
             menu.hide()
+            return
+        }
+        if (editing) {
+            exitEdit()
             return
         }
         if (!cancelLaunch()) super.onBackPressed()
