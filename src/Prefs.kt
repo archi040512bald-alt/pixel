@@ -38,6 +38,8 @@ class Prefs(c: Context) {
     var landOn by int("landOn", 1)
     var landSpeed by int("landSpeed", 600)
     var landR by int("landR", 40)
+    var drawer by int("drawer", 1)
+    var dots by int("dots", 1)
     var pack by str("pack")
     var desk by str("desk")
     var lang by str("lang")
@@ -59,7 +61,8 @@ class Prefs(c: Context) {
     }
 
     fun listen(cb: (String) -> Unit) {
-        val keys = setOf("shape", "cols", "rows", "pack", "lang", "dockBg", "dockR", "iconSize", "labels", "search")
+        val keys = setOf("shape", "cols", "rows", "pack", "lang", "dockBg", "dockR", "iconSize",
+            "labels", "search", "drawer", "dots")
         val x = SharedPreferences.OnSharedPreferenceChangeListener { _, k ->
             if (k != null && k in keys) cb(k)
         }
