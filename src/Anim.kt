@@ -18,6 +18,7 @@ class WindowCard(c: Context) : View(c) {
     private val box = RectF()
     private var from = RectF()
     private var src: View? = null
+    private var hidden: View? = null
     private var t = 0f
     private var shown = false
     private var hyper = false
@@ -28,6 +29,7 @@ class WindowCard(c: Context) : View(c) {
     private var ease: Interpolator = curveOf(0)
     private val soft = PathInterpolator(0.4f, 0f, 0.2f, 1f)
     private val density = c.resources.displayMetrics.density
+    var hideView: View? = null
     var cornerDp = 40
     var speed = 340
     var curve = 0
@@ -51,8 +53,16 @@ class WindowCard(c: Context) : View(c) {
         a0 = 0f
     }
 
+    // Настоящий значок прячем на время полёта карточки, чтобы он не двоился
+    private fun restore() {
+        hidden?.alpha = 1f
+        hidden = null
+    }
+
     private fun run(a: Float, b: Float, ms: Long, half: (() -> Unit)?, end: () -> Unit) {
-        anim?.cancel()
+        val old = anim
+        anim = null
+        old?.cancel()
         var fired = false
         val at = if (hyper) 0.9f else 0.7f
         val va = ValueAnimator.ofFloat(a, b)
@@ -111,6 +121,10 @@ class WindowCard(c: Context) : View(c) {
         reach = p.reach
         a0 = reach / 100f * 0.92f
         if (hyper) tint = tintOf(v)
+        restore()
+        hidden = hideView
+        hideView = null
+        hidden?.alpha = 0f
         from = rect
         src = v
         t = 0f
@@ -124,7 +138,10 @@ class WindowCard(c: Context) : View(c) {
         shown = false
         ease = easeFor()
         flatten()
-        run(t, 0f, (speed * 0.85f).toLong(), null) { visibility = INVISIBLE }
+        run(t, 0f, (speed * 0.85f).toLong(), null) {
+            visibility = INVISIBLE
+            restore()
+        }
     }
 
     fun cancel() {
@@ -132,7 +149,10 @@ class WindowCard(c: Context) : View(c) {
         shown = false
         ease = curveOf(0)
         flatten()
-        run(t, 0f, 220, null) { visibility = INVISIBLE }
+        run(t, 0f, 220, null) {
+            visibility = INVISIBLE
+            restore()
+        }
     }
 
     override fun onDraw(cv: Canvas) {
