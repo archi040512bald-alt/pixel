@@ -7,10 +7,13 @@ sed -i 's/search = TextView(this)/search = SearchBar(this)/' $K/MainActivity.kt
 sed -i 's/intArrayOf(32, 420, 0, 1, 16, 6, 1)/intArrayOf(36, 420, 0, 1, 10, 8, 1)/' $K/Prefs.kt
 sed -i 's/r\.text = items\[i\]/r.text = tagged(items[i]); r.isEnabled = !items[i].endsWith("Soon")/' $K/SettingsActivity.kt
 sed -i '/getInsetsController/d' $K/SettingsActivity.kt
-sed -i 's/menu\.show(app, cell, remove)/try { menu.show(app, cell, remove) } catch (e: Throwable) { Toast.makeText(this, e.toString(), Toast.LENGTH_LONG).show() }/' $K/MainActivity.kt
+sed -i '/var landR by int("landR", 40)/a\    var reach by int("reach", 50)' $K/Prefs.kt
+sed -i '/"Launch delay"/a\        slider(l("Дальность карточки", "Card reach"), 0, 100, p.reach, " %") { p.reach = it }' $K/SettingsActivity.kt
 grep -q 'SearchBar(this)' $K/MainActivity.kt
 grep -q 'intArrayOf(36, 420' $K/Prefs.kt
 grep -q 'endsWith("Soon")' $K/SettingsActivity.kt
+grep -q 'var reach' $K/Prefs.kt
+grep -q 'p.reach' $K/SettingsActivity.kt
 cp src/AndroidManifest.xml $D/
 cp src/themes.xml $D/res/values/
 ICON=$(ls src/*.png 2>/dev/null | head -1)
