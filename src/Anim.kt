@@ -45,6 +45,12 @@ class WindowCard(c: Context) : View(c) {
         }
     }
 
+    // При закрытии карточка должна дойти до самой иконки, поэтому стартовое смещение снимаем
+    private fun flatten() {
+        t = a0 + (1f - a0) * t
+        a0 = 0f
+    }
+
     private fun run(a: Float, b: Float, ms: Long, half: (() -> Unit)?, end: () -> Unit) {
         anim?.cancel()
         var fired = false
@@ -117,6 +123,7 @@ class WindowCard(c: Context) : View(c) {
         if (!shown) return
         shown = false
         ease = easeFor()
+        flatten()
         run(t, 0f, (speed * 0.85f).toLong(), null) { visibility = INVISIBLE }
     }
 
@@ -124,6 +131,7 @@ class WindowCard(c: Context) : View(c) {
         if (!shown) return
         shown = false
         ease = curveOf(0)
+        flatten()
         run(t, 0f, 220, null) { visibility = INVISIBLE }
     }
 
