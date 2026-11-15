@@ -9,13 +9,18 @@ sed -i 's/r\.text = items\[i\]/r.text = tagged(items[i]); r.isEnabled = !items[i
 sed -i '/getInsetsController/d' $K/SettingsActivity.kt
 sed -i '/var landR by int("landR", 40)/a\    var reach by int("reach", 50)' $K/Prefs.kt
 sed -i '/"Launch delay"/a\        slider(l("Дальность карточки", "Card reach"), 0, 100, p.reach, " %") { p.reach = it }' $K/SettingsActivity.kt
+sed -i 's/window\.navigationBarColor = Color\.TRANSPARENT/window.navigationBarColor = Color.TRANSPARENT; if (Build.VERSION.SDK_INT >= 28) window.navigationBarDividerColor = Color.TRANSPARENT/' $K/MainActivity.kt
 grep -q 'SearchBar(this)' $K/MainActivity.kt
 grep -q 'intArrayOf(36, 420' $K/Prefs.kt
 grep -q 'endsWith("Soon")' $K/SettingsActivity.kt
 grep -q 'var reach' $K/Prefs.kt
 grep -q 'p.reach' $K/SettingsActivity.kt
+grep -q 'navigationBarDividerColor' $K/MainActivity.kt
 cp src/AndroidManifest.xml $D/
 cp src/themes.xml $D/res/values/
+cp src/launcher_theme.xml $D/res/values/
+sed -i 's|@android:style/Theme.DeviceDefault.Wallpaper.NoTitleBar|@style/LauncherTheme|' $D/AndroidManifest.xml
+grep -q '@style/LauncherTheme' $D/AndroidManifest.xml
 ICON=$(ls src/*.png 2>/dev/null | head -1)
 if [ -n "$ICON" ]; then
   mkdir -p $D/res/drawable-nodpi
