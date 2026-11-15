@@ -6,6 +6,8 @@ cp src/*.kt $K/
 sed -i 's/search = TextView(this)/search = SearchBar(this)/' $K/MainActivity.kt
 sed -i 's/intArrayOf(32, 420, 0, 1, 16, 6, 1)/intArrayOf(36, 420, 0, 1, 10, 8, 1)/' $K/Prefs.kt
 sed -i 's/r\.text = items\[i\]/r.text = tagged(items[i]); r.isEnabled = !items[i].endsWith("Soon")/' $K/SettingsActivity.kt
+sed -i '/getInsetsController/d' $K/SettingsActivity.kt
+sed -i 's/menu\.show(app, cell, remove)/try { menu.show(app, cell, remove) } catch (e: Throwable) { Toast.makeText(this, e.toString(), Toast.LENGTH_LONG).show() }/' $K/MainActivity.kt
 grep -q 'SearchBar(this)' $K/MainActivity.kt
 grep -q 'intArrayOf(36, 420' $K/Prefs.kt
 grep -q 'endsWith("Soon")' $K/SettingsActivity.kt
