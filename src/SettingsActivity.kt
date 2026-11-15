@@ -1,17 +1,23 @@
 package com.example.pixellauncher
 
 import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.appbar.MaterialToolbar
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.DynamicColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -22,6 +28,9 @@ import com.google.android.material.slider.Slider
 class SettingsActivity : AppCompatActivity() {
     private lateinit var p: Prefs
     private lateinit var list: LinearLayout
+    private var night = false
+    private val ink: Int get() = if (night) 0xFFD5DEE6.toInt() else 0xFF37474F.toInt()
+    private val rowStyle = com.google.android.material.R.style.TextAppearance_Material3_TitleLarge
     private val titleStyle = com.google.android.material.R.style.TextAppearance_Material3_TitleMedium
     private val bodyStyle = com.google.android.material.R.style.TextAppearance_Material3_BodyMedium
     private val pick = registerForActivityResult(ActivityResultContracts.GetContent()) { u: Uri? ->
@@ -34,11 +43,35 @@ class SettingsActivity : AppCompatActivity() {
         DynamicColors.applyToActivityIfAvailable(this)
         super.onCreate(s)
         p = Prefs(this)
+        night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val screen = intent.getStringExtra("s") ?: "main"
+
+        val colors = if (night) intArrayOf(0xFF171C21.toInt(), 0xFF0E1216.toInt())
+        else intArrayOf(0xFFEAF2F8.toInt(), 0xFFDAE6EE.toInt())
+        window.setBackgroundDrawable(GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors))
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
-        val bar = MaterialToolbar(this)
-        bar.title = when (screen) {
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, ins ->
+            val b = ins.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(0, b.top, 0, b.bottom)
+            ins
+        }
+        WindowCompat.getInsetsController(window, root).isAppearanceLightStatusBars = !night
+
+        val head = LinearLayout(this)
+        head.orientation = LinearLayout.HORIZONTAL
+        head.gravity = Gravity.CENTER_VERTICAL
+        head.setPadding(dp(16), dp(16), dp(16), dp(12))
+        val back = GlyphView(this, "back", ink)
+        back.setOnClickListener { finish() }
+        head.addView(back, LinearLayout.LayoutParams(dp(40), dp(40)))
+        val title = TextView(this)
+        title.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_HeadlineMedium)
+        title.text = when (screen) {
             "desk" -> l("Рабочий стол", "Desktop")
             "anim" -> l("Анимации", "Animations")
             "icons" -> l("Иконки", "Icons")
@@ -47,15 +80,14 @@ class SettingsActivity : AppCompatActivity() {
             "lang" -> l("Язык", "Language")
             else -> l("Настройки", "Settings")
         }
-        if (screen != "main") {
-            bar.setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
-            bar.setNavigationOnClickListener { finish() }
-        }
-        root.addView(bar, LinearLayout.LayoutParams(-1, -2))
+        title.setPadding(dp(16), 0, 0, 0)
+        head.addView(title)
+        root.addView(head, LinearLayout.LayoutParams(-1, -2))
+
         val sv = ScrollView(this)
         list = LinearLayout(this)
         list.orientation = LinearLayout.VERTICAL
-        list.setPadding(dp(16), dp(8), dp(16), dp(24))
+        list.setPadding(dp(16), dp(4), dp(16), dp(24))
         sv.addView(list)
         root.addView(sv, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
@@ -68,7 +100,7 @@ class SettingsActivity : AppCompatActivity() {
                 slider(l("Колонок", "Columns"), 3, 6, p.cols, "") { p.cols = it }
                 slider(l("Строк на рабочем столе", "Desktop rows"), 3, 7, p.rows, "") { p.rows = it }
             }
-            "wall" -> row(l("Выбрать картинку", "Choose image"), l("Из галереи или файлов", "From gallery or files")) {
+            "wall" -> row("image", l("Выбрать картинку", "Choose image"), l("Из галереи или файлов", "From gallery or files")) {
                 pick.launch("image/*")
             }
             "lang" -> {
@@ -81,13 +113,13 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
             else -> {
-                row(l("Рабочий стол", "Desktop"), l("Док, значки, поиск, страницы", "Dock, icons, search, pages")) { go("desk") }
-                row(l("Анимации", "Animations"), l("Пресеты, размытие, зум, скорость", "Presets, blur, zoom, speed")) { go("anim") }
-                row(l("Иконки", "Icons"), l("Форма и иконпак", "Shape and icon pack")) { go("icons") }
-                row(l("Сетка", "Grid"), l("Колонки и строки", "Columns and rows")) { go("grid") }
-                row(l("Обои", "Wallpaper"), l("Выбрать картинку для обоев", "Pick a wallpaper image")) { go("wall") }
-                row(l("Язык", "Language"), l("Системный, Русский, English", "System, Russian, English")) { go("lang") }
-                row(l("Лаунчер по умолчанию", "Default launcher"), l("Открыть системные настройки", "Open system settings")) {
+                row("home", l("Рабочий стол", "Desktop"), l("Док, значки, поиск, страницы", "Dock, icons, search, pages")) { go("desk") }
+                row("anim", l("Анимации", "Animations"), l("Пресеты, размытие, зум, скорость", "Presets, blur, zoom, speed")) { go("anim") }
+                row("shapes", l("Иконки", "Icons"), l("Форма и иконпак", "Shape and icon pack")) { go("icons") }
+                row("grid", l("Сетка", "Grid"), l("Колонки и строки", "Columns and rows")) { go("grid") }
+                row("image", l("Обои", "Wallpaper"), l("Выбрать картинку для обоев", "Pick a wallpaper image")) { go("wall") }
+                row("globe", l("Язык", "Language"), l("Системный, Русский, English", "System, Russian, English")) { go("lang") }
+                row("launcher", l("Лаунчер по умолчанию", "Default launcher"), l("Открыть системные настройки", "Open system settings")) {
                     startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                 }
             }
@@ -113,20 +145,29 @@ class SettingsActivity : AppCompatActivity() {
         list.addView(h)
     }
 
-    private fun row(title: String, sub: String, click: () -> Unit) {
+    private fun row(icon: String, title: String, sub: String, click: () -> Unit) {
         val card = MaterialCardView(this)
-        card.radius = dp(20).toFloat()
+        card.radius = dp(26).toFloat()
+        card.cardElevation = dp(3).toFloat()
+        card.setCardBackgroundColor(if (night) 0xFF262C33.toInt() else 0xE6FFFFFF.toInt())
+        val line = LinearLayout(this)
+        line.orientation = LinearLayout.HORIZONTAL
+        line.gravity = Gravity.CENTER_VERTICAL
+        line.setPadding(dp(22), dp(18), dp(18), dp(18))
+        line.addView(GlyphView(this, icon, ink), LinearLayout.LayoutParams(dp(30), dp(30)))
         val box = LinearLayout(this)
         box.orientation = LinearLayout.VERTICAL
-        box.setPadding(dp(20), dp(16), dp(20), dp(16))
+        box.setPadding(dp(20), 0, dp(8), 0)
         val st = text(sub, bodyStyle)
         st.alpha = 0.7f
-        box.addView(text(title, titleStyle))
+        box.addView(text(title, rowStyle))
         box.addView(st)
-        card.addView(box)
+        line.addView(box, LinearLayout.LayoutParams(0, -2, 1f))
+        line.addView(GlyphView(this, "chev", 0xFF9AA5AE.toInt()), LinearLayout.LayoutParams(dp(22), dp(22)))
+        card.addView(line)
         card.setOnClickListener { click() }
         val lp = LinearLayout.LayoutParams(-1, -2)
-        lp.bottomMargin = dp(8)
+        lp.bottomMargin = dp(12)
         list.addView(card, lp)
     }
 
@@ -158,7 +199,8 @@ class SettingsActivity : AppCompatActivity() {
         val g = RadioGroup(this)
         for (i in items.indices) {
             val r = MaterialRadioButton(this)
-            r.text = items[i]
+            r.text = tagged(items[i])
+            r.isEnabled = !items[i].endsWith("Soon")
             r.id = 100 + i
             g.addView(r)
         }
@@ -215,7 +257,7 @@ class SettingsActivity : AppCompatActivity() {
         if (p.pack.isNotEmpty()) {
             cur = IconPacks.find(this).firstOrNull { it.first == p.pack }?.second ?: p.pack
         }
-        row(l("Иконпак", "Icon pack"), cur) { pickPack() }
+        row("shapes", l("Иконпак", "Icon pack"), cur) { pickPack() }
         head(l("Форма иконок", "Icon shape"))
         radios(shapeNames(this), p.shape) { p.shape = it }
     }
