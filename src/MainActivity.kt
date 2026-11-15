@@ -16,6 +16,7 @@ import android.view.*
 import android.widget.*
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.hypot
 
 class MainActivity : HomeBase() {
     private lateinit var grid: GridView
@@ -26,10 +27,14 @@ class MainActivity : HomeBase() {
     private lateinit var card: WindowCard
     private lateinit var desk: Desk
     private lateinit var trash: TextView
+    private lateinit var menu: AppMenu
     private var all = listOf<LauncherApp>()
     private var shown = listOf<LauncherApp>()
     private var dragApp: LauncherApp? = null
     private var dragItem: DeskItem? = null
+    private var moved = false
+    private var ox = 0f
+    private var oy = 0f
     private var launching = false
     private var stopped = false
     private var pending: Runnable? = null
@@ -90,17 +95,14 @@ class MainActivity : HomeBase() {
         glance.setTextColor(Color.WHITE)
         glance.textSize = 28f
         glance.setPadding(dp(28), dp(16), 0, dp(8))
-        desk = Desk(this, prefs, { x, v -> launch(x, v) }, { item, v -> startDrag(null, item, v) })
+        desk = Desk(this, prefs, { x, v -> launch(x, v) }, { item, v ->
+            startDrag(null, item, v)
+            menuFor(null, item, v)
+        })
         dots = PageDots(this)
         dock = LinearLayout(this)
         dock.gravity = Gravity.CENTER
-        search = TextView(this)
-        search.text = L(this, "G   Поиск", "G   Search")
-        search.textSize = 16f
-        search.setTextColor(0xFF444746.toInt())
-        search.gravity = Gravity.CENTER_VERTICAL
-        search.setPadding(dp(24), 0, dp(24), 0)
-        search.background = round(0xF2F1F3F4.toInt(), 28)
+        search = SearchBar(this)
         search.setOnClickListener {
             if (prefs.drawer == 1) {
                 animateTo(1f)
@@ -171,6 +173,8 @@ class MainActivity : HomeBase() {
 
         card = WindowCard(this)
         root.addView(card, FrameLayout.LayoutParams(-1, -1))
+        menu = AppMenu(this, root)
+        menu.targets = listOf(home, drawer)
 
         val gd = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onLongPress(e: MotionEvent) {
@@ -188,20 +192,25 @@ class MainActivity : HomeBase() {
         desk.onPage = { n, f -> dots.set(n, f) }
         home.setOnTouchListener { _, e -> handler(e) }
         header.setOnTouchListener { _, e -> onSwipe(e) }
-        home.setOnDragListener { _, e ->
+        root.setOnDragListener { _, e ->
             when (e.action) {
-                DragEvent.ACTION_DRAG_STARTED -> {
-                    trash.visibility = if (dragItem != null && prefs.drawer == 1) View.VISIBLE else View.GONE
-                    true
-                }
+                DragEvent.ACTION_DRAG_STARTED -> true
                 DragEvent.ACTION_DRAG_LOCATION -> {
-                    desk.edgeHover(e.x)
+                    if (!moved && hypot(e.x - ox, e.y - oy) > dp(24)) {
+                        moved = true
+                        menu.hide()
+                        if (dragItem != null && prefs.drawer == 1) trash.visibility = View.VISIBLE
+                        if (dragApp != null) animateTo(0f)
+                    }
+                    if (moved) desk.edgeHover(e.x)
                     true
                 }
                 DragEvent.ACTION_DROP -> {
-                    val di = dragItem
-                    if (di != null && prefs.drawer == 1 && e.y < dp(110)) desk.removeItem(di)
-                    else desk.drop(dragApp, di, e.x - desk.left, e.y - desk.top)
+                    if (moved) {
+                        val di = dragItem
+                        if (di != null && prefs.drawer == 1 && e.y < dp(110)) desk.removeItem(di)
+                        else desk.drop(dragApp, di, e.x - desk.left, e.y - desk.top)
+                    }
                     true
                 }
                 DragEvent.ACTION_DRAG_ENDED -> {
@@ -250,9 +259,20 @@ class MainActivity : HomeBase() {
     private fun startDrag(a: LauncherApp?, item: DeskItem?, cell: View) {
         dragApp = a
         dragItem = item
+        moved = false
+        val loc = IntArray(2)
+        cell.getLocationOnScreen(loc)
+        ox = loc[0] + cell.width / 2f
+        oy = loc[1] + cell.height / 2f
         val data = ClipData.newPlainText("app", "x")
         cell.startDragAndDrop(data, View.DragShadowBuilder(cell), null, 0)
-        if (item == null) animateTo(0f)
+    }
+
+    private fun menuFor(a: LauncherApp?, item: DeskItem?, cell: View) {
+        val app = a ?: (item?.let { if (it.folder) null else all.firstOrNull { x -> x.key == it.keys[0] } }) ?: return
+        var remove: (() -> Unit)? = null
+        if (item != null && prefs.drawer == 1) remove = { desk.removeItem(item) }
+        menu.show(app, cell, remove)
     }
 
     private fun loadApps() {
@@ -284,7 +304,10 @@ class MainActivity : HomeBase() {
             override fun getItem(p: Int): Any = shown[p]
             override fun getItemId(p: Int) = p.toLong()
             override fun getView(p: Int, v: View?, g: ViewGroup?): View =
-                makeCell(this@MainActivity, shown[p], true, { x, cell -> startDrag(x, null, cell) }) { x, iv -> launch(x, iv) }
+                makeCell(this@MainActivity, shown[p], true, { x, cell ->
+                    startDrag(x, null, cell)
+                    menuFor(x, null, cell)
+                }) { x, iv -> launch(x, iv) }
         }
     }
 
@@ -331,6 +354,7 @@ class MainActivity : HomeBase() {
     }
 
     override fun onNewIntent(intent: Intent?) {
+        if (::menu.isInitialized && menu.showing) menu.hide()
         if (cancelLaunch()) return
         if (stopped) return
         super.onNewIntent(intent)
@@ -338,6 +362,10 @@ class MainActivity : HomeBase() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (::menu.isInitialized && menu.showing) {
+            menu.hide()
+            return
+        }
         if (!cancelLaunch()) super.onBackPressed()
     }
 
