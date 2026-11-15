@@ -6,10 +6,12 @@ import android.content.Intent
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.animation.PathInterpolator
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import kotlin.math.abs
 
 abstract class HomeBase : Activity() {
     protected val prefs by lazy { Prefs(this) }
@@ -19,27 +21,67 @@ abstract class HomeBase : Activity() {
     protected var progress = 0f
     private var anim: ValueAnimator? = null
     private var downY = 0f
+    private var downX = 0f
     private var startP = 0f
+    private var startFrac = 0f
+    private var mode = 0
     private var vt: VelocityTracker? = null
     private var lastResume = 0L
     private var paused = false
 
+    protected open fun pagingAllowed(): Boolean = false
+    protected open fun drawerAllowed(): Boolean = true
+    protected open fun pageStart(): Float = 0f
+    protected open fun pageMove(f: Float) {}
+    protected open fun pageEnd(vx: Float) {}
+    protected fun swiping(): Boolean = mode == 1 || mode == 2
+
     protected fun onSwipe(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                anim?.cancel(); downY = e.rawY; startP = progress
-                vt = VelocityTracker.obtain(); vt?.addMovement(e)
+                anim?.cancel()
+                downY = e.rawY
+                downX = e.rawX
+                startP = progress
+                startFrac = pageStart()
+                mode = 0
+                vt?.recycle()
+                vt = VelocityTracker.obtain()
+                vt?.addMovement(e)
             }
             MotionEvent.ACTION_MOVE -> {
                 vt?.addMovement(e)
-                progress = (startP + (downY - e.rawY) / (home.height * 0.7f)).coerceIn(0f, 1f)
-                applyProgress()
+                if (mode == 0) {
+                    val dx = abs(e.rawX - downX)
+                    val dy = abs(e.rawY - downY)
+                    if (maxOf(dx, dy) > ViewConfiguration.get(this).scaledTouchSlop) {
+                        mode = if (progress > 0f) 1
+                        else if (dx > dy && pagingAllowed()) 2
+                        else if (drawerAllowed()) 1
+                        else 3
+                    }
+                }
+                if (mode == 1) {
+                    progress = (startP + (downY - e.rawY) / (home.height * 0.7f)).coerceIn(0f, 1f)
+                    applyProgress()
+                } else if (mode == 2) {
+                    pageMove(startFrac - (e.rawX - downX) / home.width)
+                }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                vt?.addMovement(e); vt?.computeCurrentVelocity(1000)
-                val vy = vt?.yVelocity ?: 0f
-                vt?.recycle(); vt = null
-                animateTo(if (vy < -900f) 1f else if (vy > 900f) 0f else if (progress > 0.5f) 1f else 0f)
+                vt?.addMovement(e)
+                vt?.computeCurrentVelocity(1000)
+                if (mode == 1) {
+                    val vy = vt?.yVelocity ?: 0f
+                    animateTo(if (vy < -900f) 1f else if (vy > 900f) 0f else if (progress > 0.5f) 1f else 0f)
+                } else if (mode == 2) {
+                    pageEnd(vt?.xVelocity ?: 0f)
+                } else if (progress > 0f && progress < 1f) {
+                    animateTo(if (progress > 0.5f) 1f else 0f)
+                }
+                vt?.recycle()
+                vt = null
+                mode = 0
             }
         }
         return true
