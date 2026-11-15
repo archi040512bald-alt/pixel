@@ -22,6 +22,7 @@ class MainActivity : HomeBase() {
     private lateinit var dock: LinearLayout
     private lateinit var search: TextView
     private lateinit var col: LinearLayout
+    private lateinit var dots: PageDots
     private lateinit var card: WindowCard
     private lateinit var desk: Desk
     private lateinit var trash: TextView
@@ -67,6 +68,12 @@ class MainActivity : HomeBase() {
         if (Build.VERSION.SDK_INT >= 30) i.getInsets(WindowInsets.Type.systemBars()).top
         else i.systemWindowInsetTop
 
+    override fun pagingAllowed(): Boolean = progress == 0f
+    override fun drawerAllowed(): Boolean = prefs.drawer == 1
+    override fun pageStart(): Float = if (::desk.isInitialized) desk.frac else 0f
+    override fun pageMove(f: Float) = desk.setFrac(f)
+    override fun pageEnd(vx: Float) = desk.snap(vx)
+
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
         edge()
@@ -84,6 +91,7 @@ class MainActivity : HomeBase() {
         glance.textSize = 28f
         glance.setPadding(dp(28), dp(16), 0, dp(8))
         desk = Desk(this, prefs, { x, v -> launch(x, v) }, { item, v -> startDrag(null, item, v) })
+        dots = PageDots(this)
         dock = LinearLayout(this)
         dock.gravity = Gravity.CENTER
         search = TextView(this)
@@ -93,9 +101,19 @@ class MainActivity : HomeBase() {
         search.gravity = Gravity.CENTER_VERTICAL
         search.setPadding(dp(24), 0, dp(24), 0)
         search.background = round(0xF2F1F3F4.toInt(), 28)
-        search.setOnClickListener { animateTo(1f) }
+        search.setOnClickListener {
+            if (prefs.drawer == 1) {
+                animateTo(1f)
+            } else {
+                try {
+                    startActivity(Intent(Intent.ACTION_WEB_SEARCH).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (e: Exception) {
+                }
+            }
+        }
         col.addView(glance)
         col.addView(desk, LinearLayout.LayoutParams(-1, 0, 1f))
+        col.addView(dots, LinearLayout.LayoutParams(-1, dp(16)))
         col.addView(dock)
         val slp = LinearLayout.LayoutParams(-1, dp(56))
         slp.setMargins(dp(16), 0, dp(16), dp(16))
@@ -115,6 +133,7 @@ class MainActivity : HomeBase() {
         drawer = LinearLayout(this)
         drawer.orientation = LinearLayout.VERTICAL
         drawer.visibility = View.INVISIBLE
+        drawer.isClickable = true
         val r = dp(28).toFloat()
         val bg = GradientDrawable()
         bg.setColor(0xF0202124.toInt())
@@ -160,20 +179,28 @@ class MainActivity : HomeBase() {
                 }
             }
         })
-        home.setOnTouchListener { _, e ->
+        val handler: (MotionEvent) -> Boolean = { e ->
             gd.onTouchEvent(e)
             onSwipe(e)
         }
+        desk.sink = handler
+        desk.isSwiping = { swiping() }
+        desk.onPage = { n, f -> dots.set(n, f) }
+        home.setOnTouchListener { _, e -> handler(e) }
         header.setOnTouchListener { _, e -> onSwipe(e) }
         home.setOnDragListener { _, e ->
             when (e.action) {
                 DragEvent.ACTION_DRAG_STARTED -> {
-                    trash.visibility = if (dragItem != null) View.VISIBLE else View.GONE
+                    trash.visibility = if (dragItem != null && prefs.drawer == 1) View.VISIBLE else View.GONE
+                    true
+                }
+                DragEvent.ACTION_DRAG_LOCATION -> {
+                    desk.edgeHover(e.x)
                     true
                 }
                 DragEvent.ACTION_DROP -> {
                     val di = dragItem
-                    if (di != null && e.y < dp(110)) desk.removeItem(di)
+                    if (di != null && prefs.drawer == 1 && e.y < dp(110)) desk.removeItem(di)
                     else desk.drop(dragApp, di, e.x - desk.left, e.y - desk.top)
                     true
                 }
@@ -182,6 +209,7 @@ class MainActivity : HomeBase() {
                     dragApp = null
                     dragItem = null
                     desk.rebuild()
+                    desk.endDrag()
                     true
                 }
                 else -> true
@@ -209,6 +237,7 @@ class MainActivity : HomeBase() {
         dock.layoutParams = lp
         dock.background = if (prefs.dockBg == 1) round(0x40FFFFFF, prefs.dockR) else null
         search.visibility = if (prefs.search == 1) View.VISIBLE else View.GONE
+        dots.visibility = if (prefs.dots == 1) View.VISIBLE else View.GONE
     }
 
     private fun relayout() {
@@ -229,16 +258,21 @@ class MainActivity : HomeBase() {
     private fun loadApps() {
         all = queryApps(this)
         filter("")
-        desk.setApps(all)
-        dock.removeAllViews()
         val intents = listOf(
             Intent(Intent.ACTION_DIAL),
             Intent(Intent.ACTION_VIEW, Uri.parse("sms:")),
             Intent(Intent.ACTION_VIEW, Uri.parse("https://")),
             Intent(MediaStore.ACTION_IMAGE_CAPTURE))
+        val dockApps = ArrayList<LauncherApp>()
         for (intent in intents) {
             val ri = packageManager.resolveActivity(intent, 0) ?: continue
             val a = all.firstOrNull { it.pkg == ri.activityInfo.packageName } ?: continue
+            dockApps.add(a)
+        }
+        desk.hide = dockApps.map { it.pkg }.toSet()
+        desk.setApps(all)
+        dock.removeAllViews()
+        for (a in dockApps) {
             dock.addView(makeCell(this, a, false) { x, v -> launch(x, v) }, LinearLayout.LayoutParams(0, -1, 1f))
         }
     }
