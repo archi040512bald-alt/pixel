@@ -81,12 +81,12 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
             else -> {
-                row(l("Рабочий стол", "Desktop"), l("Док, значки, поиск", "Dock, icons, search")) { go("desk") }
+                row(l("Рабочий стол", "Desktop"), l("Док, значки, поиск, страницы", "Dock, icons, search, pages")) { go("desk") }
                 row(l("Анимации", "Animations"), l("Пресеты, размытие, зум, скорость", "Presets, blur, zoom, speed")) { go("anim") }
                 row(l("Иконки", "Icons"), l("Форма и иконпак", "Shape and icon pack")) { go("icons") }
                 row(l("Сетка", "Grid"), l("Колонки и строки", "Columns and rows")) { go("grid") }
                 row(l("Обои", "Wallpaper"), l("Выбрать картинку для обоев", "Pick a wallpaper image")) { go("wall") }
-                row(l("Язык", "Language"), l("Русский, English", "Russian, English")) { go("lang") }
+                row(l("Язык", "Language"), l("Системный, Русский, English", "System, Russian, English")) { go("lang") }
                 row(l("Лаунчер по умолчанию", "Default launcher"), l("Открыть системные настройки", "Open system settings")) {
                     startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                 }
@@ -172,6 +172,14 @@ class SettingsActivity : AppCompatActivity() {
         toggle(l("Фон для дока", "Dock background"), p.dockBg == 1) { p.dockBg = if (it) 1 else 0 }
         slider(l("Скругление фона дока", "Dock corner radius"), 0, 40, p.dockR, " dp") { p.dockR = it }
         toggle(l("Панель поиска", "Search bar"), p.search == 1) { p.search = if (it) 1 else 0 }
+        head(l("Страницы", "Pages"))
+        toggle(l("Индикатор страниц", "Page indicator"), p.dots == 1) { p.dots = if (it) 1 else 0 }
+        head(l("Меню приложений", "App drawer"))
+        toggle(l("Меню приложений", "App drawer"), p.drawer == 1) { p.drawer = if (it) 1 else 0 }
+        val note = text(l("Если выключить, все приложения окажутся на страницах рабочего стола, а свайп вверх отключится",
+            "When off, all apps are placed on desktop pages and swipe up is disabled"), bodyStyle)
+        note.alpha = 0.7f
+        list.addView(note)
         head(l("Значки", "Icons"))
         slider(l("Размер значков", "Icon size"), 40, 80, p.iconSize, " dp") { p.iconSize = it }
         toggle(l("Названия приложений", "App names"), p.labels == 1) { p.labels = if (it) 1 else 0 }
