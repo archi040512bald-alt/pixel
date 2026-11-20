@@ -127,8 +127,9 @@ class WindowCard(c: Context) : View(c) {
     }
 
     // Цвет карточки HyperOS: в видео это цвет самого приложения (у Quizlet фирменный синий).
-    // Берём доминирующий насыщенный цвет значка и доводим до полной яркости;
-    // у белых, серых и чёрных значков карточка тёмная.
+    // Берём самый большой по площади насыщенный оттенок значка (не среднее, иначе у разноцветных значков
+    // получается грязный цвет) и доводим его до полной яркости.
+    // Если насыщенных пикселей мало (белые, серые, чёрные значки, Chrome, Google, Play), карточка тёмная.
     private fun hyperColor(v: View): Int {
         val dark = Color.rgb(0x1B, 0x1B, 0x1D)
         if (v.width <= 0 || v.height <= 0) return dark
@@ -136,28 +137,33 @@ class WindowCard(c: Context) : View(c) {
         val cv = Canvas(b)
         cv.scale(8f / v.width, 8f / v.height)
         v.draw(cv)
-        var r = 0
-        var g = 0
-        var bl = 0
-        var n = 0
+        val cnt = IntArray(12)
+        val sr = IntArray(12)
+        val sg = IntArray(12)
+        val sb = IntArray(12)
+        var opaque = 0
         val hsv = FloatArray(3)
         for (y in 0 until 8) {
             for (x in 0 until 8) {
                 val p = b.getPixel(x, y)
                 if (Color.alpha(p) > 128) {
+                    opaque++
                     Color.colorToHSV(p, hsv)
                     if (hsv[1] > 0.35f && hsv[2] > 0.25f) {
-                        r += Color.red(p)
-                        g += Color.green(p)
-                        bl += Color.blue(p)
-                        n++
+                        val k = ((hsv[0] / 30f).toInt()) % 12
+                        cnt[k]++
+                        sr[k] += Color.red(p)
+                        sg[k] += Color.green(p)
+                        sb[k] += Color.blue(p)
                     }
                 }
             }
         }
         b.recycle()
-        if (n < 6) return dark
-        Color.RGBToHSV(r / n, g / n, bl / n, hsv)
+        var best = 0
+        for (k in 1 until 12) if (cnt[k] > cnt[best]) best = k
+        if (opaque == 0 || cnt[best] < opaque * 0.4f) return dark
+        Color.RGBToHSV(sr[best] / cnt[best], sg[best] / cnt[best], sb[best] / cnt[best], hsv)
         hsv[1] = minOf(1f, hsv[1] * 1.2f)
         hsv[2] = 1f
         return Color.HSVToColor(hsv)
