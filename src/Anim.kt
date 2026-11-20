@@ -11,7 +11,9 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.view.View
 import android.view.animation.Interpolator
+import android.view.animation.LinearInterpolator
 import android.view.animation.PathInterpolator
+import kotlin.math.pow
 
 class WindowCard(c: Context) : View(c) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -24,11 +26,21 @@ class WindowCard(c: Context) : View(c) {
     private var hyper = false
     private var reach = 50
     private var a0 = 0f
-    private var tint = 0xFF121214.toInt()
+    private var tint = 0xFF1B1B1D.toInt()
     private var anim: ValueAnimator? = null
     private var ease: Interpolator = curveOf(0)
     private val soft = PathInterpolator(0.4f, 0f, 0.2f, 1f)
     private val density = c.resources.displayMetrics.density
+
+    // HyperOS: время в мс от касания (по замерам видео, см. HyperSpec)
+    private var tm = 0f
+    private var cm = 0f
+    private var closing = false
+    private var p0 = 0f
+    private var b0 = 1f
+    private var ca0 = 0f
+    private var is0 = 1f
+
     var hideView: View? = null
     var cornerDp = 40
     var speed = 340
@@ -64,7 +76,7 @@ class WindowCard(c: Context) : View(c) {
         anim = null
         old?.cancel()
         var fired = false
-        val at = if (hyper) 0.9f else 0.7f
+        val at = 0.7f
         val va = ValueAnimator.ofFloat(a, b)
         anim = va
         visibility = VISIBLE
@@ -86,9 +98,40 @@ class WindowCard(c: Context) : View(c) {
         va.start()
     }
 
-    private fun tintOf(v: View): Int {
-        val base = 0x12
-        if (v.width <= 0 || v.height <= 0) return Color.rgb(base, base, base + 2)
+    // HyperOS: аниматор идёт по абсолютному времени в мс, формы кривых заданы в HyperSpec
+    private fun runHyper(fromV: Float, toV: Float, half: (() -> Unit)?, end: () -> Unit) {
+        val old = anim
+        anim = null
+        old?.cancel()
+        var fired = false
+        val va = ValueAnimator.ofFloat(fromV, toV)
+        anim = va
+        visibility = VISIBLE
+        va.duration = (toV - fromV).toLong().coerceAtLeast(1L)
+        va.interpolator = LinearInterpolator()
+        va.addUpdateListener {
+            val v = it.animatedValue as Float
+            if (closing) cm = v else tm = v
+            if (!fired && half != null && v >= HyperSpec.OPEN_END * 0.9f) {
+                fired = true
+                half()
+            }
+            invalidate()
+        }
+        va.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(x: Animator) {
+                if (anim === va) end()
+            }
+        })
+        va.start()
+    }
+
+    // Цвет карточки HyperOS: в видео это цвет самого приложения (у Quizlet фирменный синий).
+    // Берём доминирующий насыщенный цвет значка и доводим до полной яркости;
+    // у белых, серых и чёрных значков карточка тёмная.
+    private fun hyperColor(v: View): Int {
+        val dark = Color.rgb(0x1B, 0x1B, 0x1D)
+        if (v.width <= 0 || v.height <= 0) return dark
         val b = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
         val cv = Canvas(b)
         cv.scale(8f / v.width, 8f / v.height)
@@ -97,22 +140,27 @@ class WindowCard(c: Context) : View(c) {
         var g = 0
         var bl = 0
         var n = 0
+        val hsv = FloatArray(3)
         for (y in 0 until 8) {
             for (x in 0 until 8) {
                 val p = b.getPixel(x, y)
                 if (Color.alpha(p) > 128) {
-                    r += Color.red(p)
-                    g += Color.green(p)
-                    bl += Color.blue(p)
-                    n++
+                    Color.colorToHSV(p, hsv)
+                    if (hsv[1] > 0.35f && hsv[2] > 0.25f) {
+                        r += Color.red(p)
+                        g += Color.green(p)
+                        bl += Color.blue(p)
+                        n++
+                    }
                 }
             }
         }
         b.recycle()
-        if (n == 0) return Color.rgb(base, base, base + 2)
-        val k = 0.22f
-        return Color.rgb((base + (r / n - base) * k).toInt(),
-            (base + (g / n - base) * k).toInt(), (base + (bl / n - base) * k).toInt())
+        if (n < 6) return dark
+        Color.RGBToHSV(r / n, g / n, bl / n, hsv)
+        hsv[1] = minOf(1f, hsv[1] * 1.2f)
+        hsv[2] = 1f
+        return Color.HSVToColor(hsv)
     }
 
     fun expand(rect: RectF, v: View, half: () -> Unit) {
@@ -120,7 +168,7 @@ class WindowCard(c: Context) : View(c) {
         hyper = p.preset == 1
         reach = p.reach
         a0 = reach / 100f * 0.92f
-        if (hyper) tint = tintOf(v)
+        if (hyper) tint = hyperColor(v)
         restore()
         hidden = hideView
         hideView = null
@@ -128,14 +176,41 @@ class WindowCard(c: Context) : View(c) {
         from = rect
         src = v
         t = 0f
+        tm = 0f
+        cm = 0f
+        closing = false
         shown = true
-        ease = easeFor()
-        run(0f, 1f, speed.toLong(), half) {}
+        if (hyper) {
+            runHyper(0f, HyperSpec.OPEN_END, half) {}
+        } else {
+            ease = easeFor()
+            run(0f, 1f, speed.toLong(), half) {}
+        }
+    }
+
+    private fun hyperClose() {
+        val tc = tm.coerceAtMost(HyperSpec.OPEN_END)
+        p0 = HyperSpec.cardProgress(tc)
+        b0 = HyperSpec.cardBrightness(tc)
+        ca0 = HyperSpec.clamp01((tc - HyperSpec.CARD_IN) / 33f)
+        is0 = HyperSpec.iconScale(tc)
+        closing = true
+        cm = 0f
+        val total = (HyperSpec.CLOSE_END - HyperSpec.OPEN_END) + (HyperSpec.ICON_BACK_1_0 - HyperSpec.CLOSE_END)
+        runHyper(0f, total, null) {
+            closing = false
+            visibility = INVISIBLE
+            restore()
+        }
     }
 
     fun collapse() {
         if (!shown) return
         shown = false
+        if (hyper) {
+            hyperClose()
+            return
+        }
         ease = easeFor()
         flatten()
         run(t, 0f, (speed * 0.85f).toLong(), null) {
@@ -147,6 +222,10 @@ class WindowCard(c: Context) : View(c) {
     fun cancel() {
         if (!shown) return
         shown = false
+        if (hyper) {
+            hyperClose()
+            return
+        }
         ease = curveOf(0)
         flatten()
         run(t, 0f, 220, null) {
@@ -191,38 +270,66 @@ class WindowCard(c: Context) : View(c) {
         cv.saveLayerAlpha(0f, 0f, w, h, a)
     }
 
-    private fun drawHyper(cv: Canvas) {
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val tc = t.coerceIn(0f, 1f)
-        val g = a0 + (1f - a0) * t
-        val gc = g.coerceIn(0f, 1f)
-        val fw = if (land) h else w
-        val fh = if (land) w else h
-        val cx = from.centerX() + (w / 2f - from.centerX()) * g
-        val cy = from.centerY() + (h / 2f - from.centerY()) * g
-        val bw = from.width() + (fw - from.width()) * g
-        val bh = from.height() + (fh - from.height()) * g
-        val rad = maxOf(0f, from.width() * 0.3f * (1 - gc) + cornerDp * density * gc)
-        paint.color = tint
-        paint.alpha = (255 * minOf(1f, tc * (6f + 20f * a0))).toInt()
-        cv.save()
-        cv.translate(cx, cy)
-        if (land) cv.rotate(90f * gc)
-        box.set(-bw / 2f, -bh / 2f, bw / 2f, bh / 2f)
-        cv.drawRoundRect(box, rad, rad, paint)
-        cv.restore()
+    private fun drawIcon(cv: Canvas, sc: Float, alpha: Float) {
         val v = src ?: return
-        if (v.width <= 0) return
-        val sc = 1f + 0.3f * minOf(1f, tc / 0.12f)
-        val fade = 1f - minOf(1f, maxOf(0f, (tc - 0.12f) / 0.25f))
-        if (fade <= 0f) return
+        if (v.width <= 0 || alpha <= 0f) return
         val n = cv.save()
         cv.translate(from.centerX(), from.centerY())
         cv.scale(sc, sc)
         cv.translate(-v.width / 2f, -v.height / 2f)
-        layerAlpha(cv, v.width.toFloat(), v.height.toFloat(), (255 * fade).toInt())
+        layerAlpha(cv, v.width.toFloat(), v.height.toFloat(), (255 * alpha.coerceIn(0f, 1f)).toInt())
         v.draw(cv)
         cv.restoreToCount(n)
+    }
+
+    private fun drawHyper(cv: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val p: Float
+        val br: Float
+        val cardA: Float
+        val iconSc: Float
+        val iconA: Float
+        if (!closing) {
+            // открытие: время tm в мс от касания
+            val tc = tm.coerceAtMost(HyperSpec.OPEN_END)
+            p = HyperSpec.cardProgress(tc)
+            br = HyperSpec.cardBrightness(tc)
+            cardA = HyperSpec.clamp01((tc - HyperSpec.CARD_IN) / 33f)
+            iconSc = HyperSpec.iconScale(tc)
+            iconA = 1f - cardA
+        } else {
+            val cardMs = HyperSpec.CLOSE_END - HyperSpec.OPEN_END
+            if (cm < cardMs) {
+                // карточка схлопывается в значок (q = 1 - u^1.45), темнеет к концу
+                val u = cm / cardMs
+                p = p0 * (1f - u.pow(HyperSpec.CLOSE_POWER))
+                br = b0 + (0.68f - b0) * HyperSpec.clamp01((u - 0.25f) / 0.62f)
+                cardA = ca0
+                iconSc = is0
+                iconA = 1f - ca0
+            } else {
+                // карточка исчезла, значок x1.8 возвращается к 1.0
+                p = 0f
+                br = 1f
+                cardA = 0f
+                iconSc = HyperSpec.iconScale(HyperSpec.CLOSE_END + (cm - cardMs))
+                iconA = 1f
+            }
+        }
+        if (cardA > 0f) {
+            val icon = floatArrayOf(from.left, from.top, from.right, from.bottom)
+            val r = HyperSpec.cardRect(p, icon, w, h)
+            val rad = HyperSpec.cornerRadius(p, w)
+            paint.color = Color.rgb(
+                (Color.red(tint) * br).toInt().coerceIn(0, 255),
+                (Color.green(tint) * br).toInt().coerceIn(0, 255),
+                (Color.blue(tint) * br).toInt().coerceIn(0, 255)
+            )
+            paint.alpha = (255 * cardA).toInt()
+            box.set(r[0], r[1], r[2], r[3])
+            cv.drawRoundRect(box, rad, rad, paint)
+        }
+        drawIcon(cv, iconSc, iconA)
     }
 }
