@@ -12,9 +12,11 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.view.animation.Interpolator
 import android.view.animation.PathInterpolator
 import java.util.Locale
+import kotlin.math.pow
 
 fun L(c: Context, ru: String, en: String): String {
     val l = Prefs(c).lang
@@ -38,10 +40,17 @@ fun tagged(s: String): CharSequence {
     return sp
 }
 
+// HyperOS: замеры по видео. Открытие p = 1 - (1 - u)^1.7, без пружинного перелёта.
 fun curveOf(i: Int): Interpolator = when (i) {
-    1 -> PathInterpolator(0.2f, 1.1f, 0.3f, 1f)
+    1 -> Interpolator { u -> 1f - (1f - u).pow(HyperSpec.OPEN_POWER) }
     2 -> PathInterpolator(0.22f, 1f, 0.36f, 1f)
     else -> PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
+}
+
+// Кривая закрытия: у HyperOS q = 1 - u^1.45 (разгон), у остальных как при открытии.
+fun closeCurveOf(i: Int): Interpolator = when (i) {
+    1 -> Interpolator { u -> u.pow(HyperSpec.CLOSE_POWER) }
+    else -> curveOf(i)
 }
 
 object Fx {
@@ -59,12 +68,17 @@ object Fx {
         }
     }
 
-    private fun blurTo(a: Activity, v: View, p: Prefs, on: Boolean, ms: Long) {
+    private fun blurTo(a: Activity, v: View, p: Prefs, on: Boolean, ms: Long, delay: Long = 0L) {
         if (Build.VERSION.SDK_INT < 31) return
-        val target = if (on && p.blur == 1) p.blurR * a.resources.displayMetrics.density else 0f
+        val target = if (on && p.blur == 1) {
+            if (hyper(p)) HyperSpec.BLUR_SIGMA_W * a.resources.displayMetrics.widthPixels
+            else p.blurR * a.resources.displayMetrics.density
+        } else 0f
         blurAnim?.cancel()
         val va = ValueAnimator.ofFloat(cur, target)
         va.duration = ms
+        va.startDelay = delay
+        if (hyper(p)) va.interpolator = DecelerateInterpolator(1f)
         va.addUpdateListener {
             cur = it.animatedValue as Float
             setBlur(a, v, p, cur)
@@ -74,19 +88,29 @@ object Fx {
     }
 
     fun out(a: Activity, p: Prefs, target: View, home: View) {
+        if (hyper(p)) {
+            // По видео: фон не уменьшается, значки тускнеют ~на 10% и размываются за ~87 мс (со сдвигом 13 мс).
+            val d = (HyperSpec.BLUR_END - HyperSpec.BLUR_START).toLong()
+            val st = HyperSpec.BLUR_START.toLong()
+            target.animate().scaleX(1f).scaleY(1f).alpha(HyperSpec.ICON_DIM_MIN)
+                .setStartDelay(st).setDuration(d)
+                .setInterpolator(DecelerateInterpolator(1f)).start()
+            blurTo(a, home, p, true, d, st)
+            return
+        }
         val s = 1f - p.zoom / 100f
-        val al = if (hyper(p)) 0.55f else 0f
-        target.animate().scaleX(s).scaleY(s).alpha(al).setDuration(p.speed.toLong())
+        target.animate().scaleX(s).scaleY(s).alpha(0f).setStartDelay(0).setDuration(p.speed.toLong())
             .setInterpolator(curveOf(p.curve)).start()
         blurTo(a, home, p, true, p.speed.toLong())
     }
 
     fun back(a: Activity, p: Prefs, home: View, drawer: View, progress: Float) {
         val s = 1f - 0.08f * progress
-        val ms = (p.speed * 0.85f).toLong()
-        val ip = curveOf(p.curve)
-        home.animate().scaleX(s).scaleY(s).alpha(1f - progress).setDuration(ms).setInterpolator(ip).start()
-        drawer.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(ms).setInterpolator(ip).start()
+        // Скорость возврата резкости в видео не попала в кадр, берём ту же длительность 100 мс.
+        val ms = if (hyper(p)) HyperSpec.BLUR_END.toLong() else (p.speed * 0.85f).toLong()
+        val ip: Interpolator = if (hyper(p)) DecelerateInterpolator(1f) else curveOf(p.curve)
+        home.animate().scaleX(s).scaleY(s).alpha(1f - progress).setStartDelay(0).setDuration(ms).setInterpolator(ip).start()
+        drawer.animate().scaleX(1f).scaleY(1f).alpha(1f).setStartDelay(0).setDuration(ms).setInterpolator(ip).start()
         blurTo(a, home, p, false, ms)
     }
 }
