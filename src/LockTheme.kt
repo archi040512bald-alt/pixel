@@ -71,4 +71,26 @@ object LockTheme {
             )
         }
     }
+
+    /** Акцентный цвет для часов и деталей: светлый тон оттенка обоев (у серых обоев почти белый). */
+    fun accent(c: Context): Int {
+        var primary = 0xFFB9C9F5.toInt()
+        var found = false
+        if (Build.VERSION.SDK_INT >= 27) {
+            try {
+                val wm = WallpaperManager.getInstance(c)
+                val wc = wm.getWallpaperColors(WallpaperManager.FLAG_SYSTEM)
+                    ?: wm.getWallpaperColors(WallpaperManager.FLAG_LOCK)
+                if (wc != null) {
+                    primary = wc.primaryColor.toArgb()
+                    found = true
+                }
+            } catch (e: Exception) {
+            }
+        }
+        val p = FloatArray(3)
+        Color.colorToHSV(primary, p)
+        if (found && p[1] < 0.08f) return 0xFFEDEDED.toInt()
+        return mk(p[0], (0.30f + 0.35f * p[1]).coerceAtMost(0.65f), 1f)
+    }
 }
