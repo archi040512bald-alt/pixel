@@ -2,18 +2,24 @@ package com.example.pixellauncher
 
 import android.content.Context
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.AdaptiveIconDrawable
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.InsetDrawable
 import android.os.Build
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 /**
  * Цветные (тематические) значки в стиле Material You.
  * style: 0 = оригинальные (отключено), 1 = цвета обоев (Android 12+), 2 = свой цвет из SEEDS.
- * Монохромный слой значка есть у приложений на Android 13+; остальные остаются как есть,
- * если не включено "красить все" (тогда делается силуэт по альфа-каналу).
+ * Если у значка есть монохромный слой (Android 13+), используется он.
+ * Иначе, при включённом "красить все", знак (глиф) вырезается из готового значка
+ * по отличию от цвета его фона и перекрашивается.
  */
 object IconTheme {
     const val OFF = 0
@@ -54,15 +60,77 @@ object IconTheme {
         else intArrayOf(Color.HSVToColor(floatArrayOf(h, 0.22f, 0.97f)), Color.HSVToColor(floatArrayOf(h, 0.75f, 0.28f)))
     }
 
-    /** Возвращает тематический значок или исходный, если стиль выключен или у значка нет монохромного слоя. */
+    private fun luma(r: Int, g: Int, b: Int): Float = 0.299f * r + 0.587f * g + 0.114f * b
+
+    /**
+     * Вырезает знак из готового значка: фон оценивается как самый частый цвет у края,
+     * всё, что от него заметно отличается, считается знаком. Возвращает белый знак с альфа-маской.
+     */
+    private fun glyph(c: Context, src: Drawable): Drawable? {
+        val n = 128
+        val d = (src.constantState?.newDrawable() ?: src).mutate()
+        val bmp = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
+        d.setBounds(0, 0, n, n)
+        d.draw(Canvas(bmp))
+        val px = IntArray(n * n)
+        bmp.getPixels(px, 0, n, 0, 0, n, n)
+        bmp.recycle()
+
+        val lo = (n * 0.08f).toInt()
+        val hi = (n * 0.14f).toInt()
+        val sums = HashMap<Int, IntArray>()
+        var best: IntArray? = null
+        for (y in 0 until n) {
+            for (x in 0 until n) {
+                val dm = minOf(minOf(x, n - 1 - x), minOf(y, n - 1 - y))
+                if (dm < lo || dm > hi) continue
+                val p = px[y * n + x]
+                if (Color.alpha(p) < 200) continue
+                val key = ((Color.red(p) shr 4) shl 8) or ((Color.green(p) shr 4) shl 4) or (Color.blue(p) shr 4)
+                val s = sums.getOrPut(key) { IntArray(4) }
+                s[0]++
+                s[1] += Color.red(p)
+                s[2] += Color.green(p)
+                s[3] += Color.blue(p)
+                if (best == null || s[0] > best[0]) best = s
+            }
+        }
+        val bs = best ?: return null
+        val br = bs[1] / bs[0]
+        val bg = bs[2] / bs[0]
+        val bb = bs[3] / bs[0]
+        val bl = luma(br, bg, bb)
+
+        val out = IntArray(n * n)
+        for (i in px.indices) {
+            val p = px[i]
+            val a = Color.alpha(p)
+            if (a == 0) continue
+            val r = Color.red(p)
+            val g = Color.green(p)
+            val b = Color.blue(p)
+            val dl = abs(luma(r, g, b) - bl)
+            val dr = (r - br).toFloat()
+            val dg = (g - bg).toFloat()
+            val db = (b - bb).toFloat()
+            val dc = sqrt(dr * dr + dg * dg + db * db)
+            val m = maxOf(dl, 0.45f * dc)
+            val v = ((m - 28f) / 55f).coerceIn(0f, 1f) * (a / 255f)
+            out[i] = ((v * 255f).toInt() shl 24) or 0x00FFFFFF
+        }
+        val mb = Bitmap.createBitmap(out, n, n, Bitmap.Config.ARGB_8888)
+        val bd = BitmapDrawable(c.resources, mb)
+        bd.isFilterBitmap = true
+        return InsetDrawable(bd, 0.17f)
+    }
+
+    /** Возвращает тематический значок или исходный, если стиль выключен или перекрасить не удалось. */
     fun apply(c: Context, d: Drawable, style: Int, seed: Int, all: Boolean): Drawable {
         if (style == OFF || Build.VERSION.SDK_INT < 26) return d
         val pal = palette(c, style, seed)
         var fg: Drawable? = null
         if (Build.VERSION.SDK_INT >= 33 && d is AdaptiveIconDrawable) fg = d.monochrome
-        if (fg == null && all) {
-            fg = if (d is AdaptiveIconDrawable) d.foreground else InsetDrawable(d, 0.17f)
-        }
+        if (fg == null && all) fg = glyph(c, d)
         if (fg == null) return d
         val f = (fg.constantState?.newDrawable() ?: fg).mutate()
         f.setTint(pal[1])
