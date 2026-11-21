@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.drawable.AdaptiveIconDrawable
@@ -43,8 +45,40 @@ fun queryApps(c: Context): List<LauncherApp> {
     return list.sortedBy { it.label.lowercase() }
 }
 
-class ShapedIcon(c: Context, private val d: Drawable, private val shape: Int) : View(c) {
+class ShapedIcon(
+    c: Context,
+    private val d: Drawable,
+    private val shape: Int,
+    private val pkg: String = "",
+    private val badgeOn: Boolean = false
+) : View(c) {
     private val path = Path()
+    private val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val badgeText = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (badgeOn) Badges.views.add(this)
+    }
+
+    override fun onDetachedFromWindow() {
+        Badges.views.remove(this)
+        super.onDetachedFromWindow()
+    }
+
+    private fun drawBadge(cv: Canvas, w: Int, n: Int) {
+        val r = w * 0.19f
+        val cx = w - r
+        val cy = r
+        badgePaint.color = 0xFFE53935.toInt()
+        cv.drawCircle(cx, cy, r, badgePaint)
+        val t = if (n > 99) "99+" else n.toString()
+        badgeText.color = Color.WHITE
+        badgeText.typeface = Typeface.DEFAULT_BOLD
+        badgeText.textAlign = Paint.Align.CENTER
+        badgeText.textSize = r * (if (t.length > 2) 0.85f else if (t.length > 1) 1.05f else 1.2f)
+        cv.drawText(t, cx, cy - (badgeText.descent() + badgeText.ascent()) / 2f, badgeText)
+    }
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         path.reset()
@@ -63,6 +97,7 @@ class ShapedIcon(c: Context, private val d: Drawable, private val shape: Int) : 
     override fun onDraw(cv: Canvas) {
         val w = width
         val h = height
+        val sc = cv.save()
         if (shape != 0) cv.clipPath(path)
         if (shape != 0 && Build.VERSION.SDK_INT >= 26 && d is AdaptiveIconDrawable) {
             val o = (w * 0.25f).toInt()
@@ -75,6 +110,11 @@ class ShapedIcon(c: Context, private val d: Drawable, private val shape: Int) : 
         } else {
             d.setBounds(0, 0, w, h)
             d.draw(cv)
+        }
+        cv.restoreToCount(sc)
+        if (badgeOn) {
+            val n = Badges.counts[pkg] ?: 0
+            if (n > 0) drawBadge(cv, w, n)
         }
     }
 }
@@ -98,7 +138,7 @@ fun makeCell(c: Context, a: LauncherApp, label: Boolean,
     ll.orientation = LinearLayout.VERTICAL
     ll.gravity = Gravity.CENTER
     ll.setPadding(0, c.dp(6), 0, c.dp(6))
-    val icon = ShapedIcon(c, a.icon, p.shape)
+    val icon = ShapedIcon(c, a.icon, p.shape, a.pkg, p.badges == 1)
     val sz = c.dp(p.iconSize)
     ll.addView(icon, LinearLayout.LayoutParams(sz, sz))
     if (label && p.labels == 1) {

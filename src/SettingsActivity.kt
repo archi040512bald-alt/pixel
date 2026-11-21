@@ -15,6 +15,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -225,6 +226,13 @@ class SettingsActivity : AppCompatActivity() {
         head(l("Значки", "Icons"))
         slider(l("Размер значков", "Icon size"), 40, 80, p.iconSize, " dp") { p.iconSize = it }
         toggle(l("Названия приложений", "App names"), p.labels == 1) { p.labels = if (it) 1 else 0 }
+        toggle(l("Счётчики уведомлений", "Notification badges"), p.badges == 1) { p.badges = if (it) 1 else 0 }
+        if (!NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) {
+            row("shapes", l("Доступ к уведомлениям", "Notification access"),
+                l("Нужен для счётчиков, нажмите, чтобы выдать", "Needed for badges, tap to grant")) {
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }
+        }
         head(l("Цветные значки", "Themed icons"))
         radios(IconTheme.styleNames(this), p.iconStyle) {
             p.iconStyle = it

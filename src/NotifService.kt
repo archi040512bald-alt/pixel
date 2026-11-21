@@ -19,19 +19,23 @@ class NotifService : NotificationListenerService() {
 
     override fun onListenerConnected() {
         inst = this
+        Badges.refresh()
         onChange?.invoke()
     }
 
     override fun onListenerDisconnected() {
         inst = null
+        Badges.refresh()
         onChange?.invoke()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        Badges.refresh()
         onChange?.invoke()
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        Badges.refresh()
         onChange?.invoke()
     }
 }
