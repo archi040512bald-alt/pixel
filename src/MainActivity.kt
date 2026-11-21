@@ -42,6 +42,7 @@ class MainActivity : HomeBase() {
     private var span0 = 0f
     private var editing = false
     private var launching = false
+    private var searchShown = 0
     private var stopped = false
     private var pending: Runnable? = null
     private val rcv = object : BroadcastReceiver() {
@@ -116,19 +117,7 @@ class MainActivity : HomeBase() {
         dots = PageDots(this)
         dock = LinearLayout(this)
         dock.gravity = Gravity.CENTER
-        search = SearchBar(this)
-        search.setOnClickListener {
-            if (!editing) {
-                if (prefs.drawer == 1) {
-                    animateTo(1f)
-                } else {
-                    try {
-                        startActivity(Intent(Intent.ACTION_WEB_SEARCH).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    } catch (e: Exception) {
-                    }
-                }
-            }
-        }
+        search = makeSearch()
         col.addView(glance)
         col.addView(desk, LinearLayout.LayoutParams(-1, 0, 1f))
         col.addView(dots, LinearLayout.LayoutParams(-1, dp(16)))
@@ -309,6 +298,40 @@ class MainActivity : HomeBase() {
         for (v in listOf(col.getChildAt(0), dots, dock, search)) v.animate().alpha(1f).setDuration(220).start()
     }
 
+    // Панель поиска: 0 = текущая, 1 = в стиле Google
+    private fun makeSearch(): TextView {
+        searchShown = prefs.searchStyle
+        val v: TextView = if (prefs.searchStyle == 1) GoogleBar(this) else SearchBar(this)
+        v.setOnClickListener {
+            if (!editing) {
+                if (prefs.searchStyle == 1) {
+                    try {
+                        startActivity(Intent(Intent.ACTION_WEB_SEARCH).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e: Exception) {
+                    }
+                } else if (prefs.drawer == 1) {
+                    animateTo(1f)
+                } else {
+                    try {
+                        startActivity(Intent(Intent.ACTION_WEB_SEARCH).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e: Exception) {
+                    }
+                }
+            }
+        }
+        return v
+    }
+
+    private fun applySearch() {
+        val old = search
+        val idx = col.indexOfChild(old)
+        if (idx < 0) return
+        val lp = old.layoutParams
+        col.removeViewAt(idx)
+        search = makeSearch()
+        col.addView(search, idx, lp)
+    }
+
     private fun look() {
         val lp = LinearLayout.LayoutParams(-1, dp(prefs.iconSize + 28))
         lp.setMargins(dp(12), 0, dp(12), if (prefs.search == 1) dp(8) else dp(12))
@@ -319,6 +342,7 @@ class MainActivity : HomeBase() {
     }
 
     private fun relayout() {
+        if (prefs.searchStyle != searchShown) applySearch()
         look()
         grid.numColumns = prefs.cols
         loadApps()
