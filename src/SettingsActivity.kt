@@ -244,6 +244,8 @@ class SettingsActivity : AppCompatActivity() {
                 head(l("Цвет значков", "Icon color"))
                 radios(IconTheme.seedNames(this), p.iconSeed) { p.iconSeed = it }
             }
+            head(l("Оттенок значков", "Icon tone"))
+            radios(listOf(l("Авто", "Auto"), l("Светлые", "Light"), l("Тёмные", "Dark")), p.iconTone) { p.iconTone = it }
             toggle(l("Красить и значки без цветной версии", "Also recolor icons without a themed version"), p.iconAll == 1) {
                 p.iconAll = if (it) 1 else 0
             }

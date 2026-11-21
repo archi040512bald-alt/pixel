@@ -25,6 +25,8 @@ object IconTheme {
     const val OFF = 0
     const val WALLPAPER = 1
     const val CUSTOM = 2
+    const val DARK = 3
+    const val CLEAR = 4
 
     val SEEDS = intArrayOf(
         0xFF4285F4.toInt(), 0xFF34A853.toInt(), 0xFFEA4335.toInt(), 0xFFFBBC04.toInt(),
@@ -34,7 +36,9 @@ object IconTheme {
     fun styleNames(c: Context): List<String> = listOf(
         L(c, "Оригинальные", "Original"),
         L(c, "Цвета обоев", "Wallpaper colors"),
-        L(c, "Свой цвет", "Custom color")
+        L(c, "Свой цвет", "Custom color"),
+        L(c, "Тёмные", "Dark"),
+        L(c, "Прозрачные", "Clear")
     )
 
     fun seedNames(c: Context): List<String> = listOf(
@@ -46,9 +50,20 @@ object IconTheme {
     private fun night(c: Context): Boolean =
         (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
+    // true = тёмный оттенок: 1 = светлые, 2 = тёмные, иначе по системной теме
+    private fun darkTone(c: Context): Boolean = when (Prefs(c).iconTone) {
+        1 -> false
+        2 -> true
+        else -> night(c)
+    }
+
     // [фон, значок]
     private fun palette(c: Context, style: Int, seed: Int): IntArray {
-        val dark = night(c)
+        if (style == DARK) return intArrayOf(0xFF1C1B1F.toInt(), 0xFFE6E1E5.toInt())
+        val dark = darkTone(c)
+        if (style == CLEAR) {
+            return if (dark) intArrayOf(0x4DFFFFFF, 0xFFF1F3F4.toInt()) else intArrayOf(0x73FFFFFF, 0xFF30343B.toInt())
+        }
         if (style == WALLPAPER && Build.VERSION.SDK_INT >= 31) {
             return if (dark) intArrayOf(c.getColor(android.R.color.system_accent1_800), c.getColor(android.R.color.system_accent1_100))
             else intArrayOf(c.getColor(android.R.color.system_accent1_100), c.getColor(android.R.color.system_accent1_800))

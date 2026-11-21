@@ -42,6 +42,10 @@ class MainActivity : HomeBase() {
     private var span0 = 0f
     private var editing = false
     private var launching = false
+    private lateinit var rootView: FrameLayout
+    private var insB = 0
+    private var homeMenu: HomeMenu? = null
+    private var sheet: IconSheet? = null
     private var searchShown = 0
     private var stopped = false
     private var pending: Runnable? = null
@@ -100,6 +104,7 @@ class MainActivity : HomeBase() {
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         val root = FrameLayout(this)
+        rootView = root
         setContentView(root)
 
         home = FrameLayout(this)
@@ -183,11 +188,7 @@ class MainActivity : HomeBase() {
             exitEdit()
             openSettings("wall")
         }
-        edit.onHome = {
-            getSharedPreferences("launcher", MODE_PRIVATE).edit().putInt("homePage", desk.page()).apply()
-            Toast.makeText(this, L(this, "Страница " + (desk.page() + 1) + " теперь главная",
-                "Page " + (desk.page() + 1) + " is now the home page"), Toast.LENGTH_SHORT).show()
-        }
+        edit.onHome = { showHomeMenu() }
         edit.onWidgets = {
             Toast.makeText(this, L(this, "Виджеты скоро", "Widgets are coming soon"), Toast.LENGTH_SHORT).show()
         }
@@ -264,6 +265,7 @@ class MainActivity : HomeBase() {
         root.setOnApplyWindowInsetsListener { _, ins ->
             col.setPadding(0, topOf(ins), 0, bottomOf(ins))
             grid.setPadding(dp(8), dp(12), dp(8), bottomOf(ins))
+            insB = bottomOf(ins)
             edit.setInsets(topOf(ins), bottomOf(ins))
             ins
         }
@@ -279,6 +281,44 @@ class MainActivity : HomeBase() {
             applyProgress()
             desk.setFrac(homePage().toFloat())
         }
+    }
+
+    private fun setHomePage() {
+        getSharedPreferences("launcher", MODE_PRIVATE).edit().putInt("homePage", desk.page()).apply()
+        Toast.makeText(this, L(this, "Страница " + (desk.page() + 1) + " теперь главная",
+            "Page " + (desk.page() + 1) + " is now the home page"), Toast.LENGTH_SHORT).show()
+    }
+
+    // Кнопка "Home" в режиме редактирования: меню Сетка / Значки / Сделать главной
+    private fun showHomeMenu() {
+        if (homeMenu != null) return
+        val menuView = HomeMenu(this,
+            { hideHomeMenu(); exitEdit(); openSettings("grid") },
+            { hideHomeMenu(); exitEdit(); showSheet() },
+            { hideHomeMenu(); setHomePage() },
+            { hideHomeMenu() })
+        rootView.addView(menuView, FrameLayout.LayoutParams(-1, -1))
+        homeMenu = menuView
+    }
+
+    private fun hideHomeMenu() {
+        val mv = homeMenu ?: return
+        homeMenu = null
+        mv.close { rootView.removeView(mv) }
+    }
+
+    private fun showSheet() {
+        if (sheet != null) return
+        val raw = applicationInfo.loadIcon(packageManager)
+        val s = IconSheet(this, prefs, raw, insB, { closeSheet(); enterEdit() }, { closeSheet(); openSettings("desk") })
+        rootView.addView(s, s.params())
+        sheet = s
+    }
+
+    private fun closeSheet() {
+        val s = sheet ?: return
+        sheet = null
+        s.close { rootView.removeView(s) }
     }
 
     private fun enterEdit() {
@@ -549,6 +589,14 @@ class MainActivity : HomeBase() {
     override fun onBackPressed() {
         if (::menu.isInitialized && menu.showing) {
             menu.hide()
+            return
+        }
+        if (homeMenu != null) {
+            hideHomeMenu()
+            return
+        }
+        if (sheet != null) {
+            closeSheet()
             return
         }
         if (editing) {
