@@ -215,6 +215,7 @@ class SettingsActivity : AppCompatActivity() {
         toggle(l("Фон для дока", "Dock background"), p.dockBg == 1) { p.dockBg = if (it) 1 else 0 }
         slider(l("Скругление фона дока", "Dock corner radius"), 0, 40, p.dockR, " dp") { p.dockR = it }
         toggle(l("Панель поиска", "Search bar"), p.search == 1) { p.search = if (it) 1 else 0 }
+        radios(listOf(l("Текущая панель", "Current bar"), l("Google поиск", "Google search")), p.searchStyle) { p.searchStyle = it }
         head(l("Страницы", "Pages"))
         toggle(l("Индикатор страниц", "Page indicator"), p.dots == 1) { p.dots = if (it) 1 else 0 }
         head(l("Меню приложений", "App drawer"))
