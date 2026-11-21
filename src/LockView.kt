@@ -32,6 +32,7 @@ class LockView(private val a: Activity, private val unlock: (PendingIntent?) -> 
     private val content = LinearLayout(a)
     private val cards = LinearLayout(a)
     private val alarm = TextView(a)
+    private val clock = TextClock(a)
     private val finger = FingerprintView(a)
     private var panel: AuthPanel? = null
     private var after: PendingIntent? = null
@@ -51,10 +52,9 @@ class LockView(private val a: Activity, private val unlock: (PendingIntent?) -> 
         background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x22000000, 0x77000000))
         content.orientation = LinearLayout.VERTICAL
 
-        val clock = TextClock(a)
         clock.format12Hour = "h:mm"
         clock.format24Hour = "HH:mm"
-        clock.setTextColor(0xFFFFA6D6.toInt())
+        clock.setTextColor(LockTheme.accent(a))
         clock.textSize = 84f
         clock.typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
         clock.setShadowLayer(10f, 0f, 3f, 0x55000000)
@@ -127,6 +127,8 @@ class LockView(private val a: Activity, private val unlock: (PendingIntent?) -> 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         requestApplyInsets()
+        // цвет часов берётся из обоев, поэтому обновляем при каждом показе экрана
+        clock.setTextColor(LockTheme.accent(a))
         NotifService.onChange = { post { refresh() } }
         refresh()
     }
