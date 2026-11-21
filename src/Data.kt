@@ -27,12 +27,15 @@ fun shapeNames(c: Context): List<String> = listOf(
 
 fun queryApps(c: Context): List<LauncherApp> {
     val pm = c.packageManager
+    val p = Prefs(c)
     val q = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
     val list = ArrayList<LauncherApp>()
     for (ri in pm.queryIntentActivities(q, 0)) {
         val pk = ri.activityInfo.packageName
         if (pk == c.packageName) continue
-        val ic = IconPacks.icon(c, pk, ri.activityInfo.name) ?: ri.loadIcon(pm)
+        // Иконпак важнее: цветные значки применяются только к системным значкам
+        val packIcon = IconPacks.icon(c, pk, ri.activityInfo.name)
+        val ic = packIcon ?: IconTheme.apply(c, ri.loadIcon(pm), p.iconStyle, p.iconSeed, p.iconAll == 1)
         val o = ri.activityInfo.screenOrientation
         val land = o == 0 || o == 6 || o == 8 || o == 11
         list.add(LauncherApp(ri.loadLabel(pm).toString(), pk, ri.activityInfo.name, ic, land))
