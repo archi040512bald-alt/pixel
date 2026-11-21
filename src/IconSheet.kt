@@ -234,7 +234,7 @@ class IconSheet(
         translationY = 3000f
         post {
             translationY = (height + a.dp(40)).toFloat()
-            animate().translationY(0f).setDuration(280).setInterpolator(DecelerateInterpolator(1.6f)).start()
+            animate().translationY(0f).setDuration(300).setInterpolator(DecelerateInterpolator(1.5f)).start()
         }
     }
 
@@ -267,7 +267,7 @@ class IconSheet(
         tone?.alpha = if (p.iconStyle == IconTheme.OFF || p.iconStyle == IconTheme.DARK) 0.4f else 1f
     }
 
-    private fun collapsedY(): Float = (height - a.dp(76)).toFloat()
+    private fun collapsedY(): Float = (height - a.dp(68)).toFloat()
 
     private fun toggle() {
         collapsed = !collapsed
@@ -276,7 +276,7 @@ class IconSheet(
     }
 
     fun close(end: () -> Unit) {
-        animate().translationY((height + a.dp(40)).toFloat()).setDuration(200).withEndAction(end).start()
+        animate().translationY((height + a.dp(40)).toFloat()).setDuration(220).setInterpolator(DecelerateInterpolator(1.2f)).withEndAction(end).start()
     }
 
     // тянуть лист можно за шапку

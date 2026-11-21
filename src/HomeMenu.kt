@@ -11,6 +11,7 @@ import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.AccelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -86,20 +87,28 @@ class HomeMenu(
         card.addView(item(a, 1, L(a, "Значки", "App Icons"), onIcons))
         card.addView(item(a, 2, L(a, "Сделать главной", "Set as home"), onHome))
         val dm = a.resources.displayMetrics
-        val lp = LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START)
-        lp.leftMargin = (dm.widthPixels * 0.10f).toInt()
+        // по видео меню центрируется над кнопкой Home (центр на 39% ширины), низ меню на 84% высоты
+        val lp = LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+        lp.rightMargin = (dm.widthPixels * 0.22f).toInt()
         lp.bottomMargin = (dm.heightPixels * 0.16f).toInt()
         addView(card, lp)
+        val below = dm.heightPixels * 0.05f
         card.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-            v.pivotX = a.dp(40).toFloat()
-            v.pivotY = v.height.toFloat()
+            // меню раскрывается из центра кнопки: она чуть ниже нижнего края меню
+            v.pivotX = v.width / 2f
+            v.pivotY = v.height + below
         }
-        card.alpha = 0f
-        card.scaleX = 0.3f
-        card.scaleY = 0.3f
+        // старт: размытая "пилюля" размером с кнопку (0.26 ширины, 0.5 высоты меню), текст проявляется позже
+        card.alpha = 0.5f
+        card.scaleX = 0.26f
+        card.scaleY = 0.5f
+        for (i in 0 until card.childCount) card.getChildAt(i).alpha = 0f
         post {
-            card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220)
+            card.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(270)
                 .setInterpolator(DecelerateInterpolator(1.6f)).start()
+            for (i in 0 until card.childCount) {
+                card.getChildAt(i).animate().alpha(1f).setStartDelay(110L + 25L * i).setDuration(150).start()
+            }
         }
     }
 
@@ -121,6 +130,9 @@ class HomeMenu(
     }
 
     fun close(end: () -> Unit) {
-        card.animate().alpha(0f).scaleX(0.4f).scaleY(0.4f).setDuration(140).withEndAction(end).start()
+        // в видео меню исчезает меньше чем за 130 мс, схлопываясь к кнопке
+        for (i in 0 until card.childCount) card.getChildAt(i).animate().alpha(0f).setStartDelay(0).setDuration(60).start()
+        card.animate().alpha(0f).scaleX(0.26f).scaleY(0.5f).setDuration(120)
+            .setInterpolator(AccelerateInterpolator(1.2f)).withEndAction(end).start()
     }
 }
