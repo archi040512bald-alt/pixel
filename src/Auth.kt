@@ -79,7 +79,6 @@ class AuthPanel(private val a: Activity, private val sp: LockPrefs,
         title.setTextColor(pal.ink)
         title.gravity = Gravity.CENTER
         if (sp.type == 1) {
-            gravity = Gravity.CENTER
             background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(pal.top, pal.bottom))
             pin()
         } else {
@@ -192,13 +191,17 @@ class AuthPanel(private val a: Activity, private val sp: LockPrefs,
     private fun pin() {
         title.text = L(a, "Введите PIN-код", "Enter your PIN")
         title.textSize = 16f
-        addView(title, LinearLayout.LayoutParams(-2, -2))
+        // середина экрана: заголовок, точки, клавиатура; кнопки "Отмена" и "Экстренный вызов" прижаты к низу
+        val mid = LinearLayout(a)
+        mid.orientation = LinearLayout.VERTICAL
+        mid.gravity = Gravity.CENTER
+        mid.addView(title, LinearLayout.LayoutParams(-2, -2))
         val d = PinDots(a, 4, pal.ink, pal.dim)
         dots = d
         val dl = LinearLayout.LayoutParams(-2, -2)
         dl.topMargin = a.dp(26)
         dl.bottomMargin = a.dp(34)
-        addView(d, dl)
+        mid.addView(d, dl)
         val rows = listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("⌫", "0", ""))
         for (row in rows) {
             val rl = LinearLayout(a)
@@ -209,8 +212,9 @@ class AuthPanel(private val a: Activity, private val sp: LockPrefs,
                 lp.setMargins(a.dp(7), a.dp(6), a.dp(7), a.dp(6))
                 rl.addView(key(k), lp)
             }
-            addView(rl)
+            mid.addView(rl)
         }
+        addView(mid, LinearLayout.LayoutParams(-1, 0, 1f))
         val bar = LinearLayout(a)
         bar.orientation = LinearLayout.HORIZONTAL
         val bl = LinearLayout.LayoutParams(-2, -2)
@@ -218,7 +222,8 @@ class AuthPanel(private val a: Activity, private val sp: LockPrefs,
         bar.addView(pill(L(a, "Отмена", "Cancel")) { cancel() }, bl)
         bar.addView(pill(L(a, "Экстренный вызов", "Emergency")) { emergency() }, bl)
         val barLp = LinearLayout.LayoutParams(-2, -2)
-        barLp.topMargin = a.dp(22)
+        barLp.topMargin = a.dp(8)
+        barLp.bottomMargin = a.dp(8)
         addView(bar, barLp)
     }
 
