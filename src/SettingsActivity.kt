@@ -225,6 +225,24 @@ class SettingsActivity : AppCompatActivity() {
         head(l("Значки", "Icons"))
         slider(l("Размер значков", "Icon size"), 40, 80, p.iconSize, " dp") { p.iconSize = it }
         toggle(l("Названия приложений", "App names"), p.labels == 1) { p.labels = if (it) 1 else 0 }
+        head(l("Цветные значки", "Themed icons"))
+        radios(IconTheme.styleNames(this), p.iconStyle) {
+            p.iconStyle = it
+            recreate()
+        }
+        if (p.iconStyle != IconTheme.OFF) {
+            if (p.iconStyle == IconTheme.CUSTOM) {
+                head(l("Цвет значков", "Icon color"))
+                radios(IconTheme.seedNames(this), p.iconSeed) { p.iconSeed = it }
+            }
+            toggle(l("Красить и значки без цветной версии", "Also recolor icons without a themed version"), p.iconAll == 1) {
+                p.iconAll = if (it) 1 else 0
+            }
+            val tn = text(l("Цвета обоев работают на Android 12 и новее, цветные версии значков есть у приложений на Android 13 и новее. Остальные значки остаются как есть, пока не включено окрашивание всех.",
+                "Wallpaper colors need Android 12+, themed icon versions come from apps on Android 13+. Other icons stay as they are unless recoloring all is on."), bodyStyle)
+            tn.alpha = 0.7f
+            list.addView(tn)
+        }
     }
 
     private fun anim() {
