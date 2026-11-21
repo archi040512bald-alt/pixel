@@ -112,7 +112,7 @@ class WindowCard(c: Context) : View(c) {
         va.addUpdateListener {
             val v = it.animatedValue as Float
             if (closing) cm = v else tm = v
-            if (!fired && half != null && v >= HyperSpec.OPEN_END * 0.9f) {
+            if (!fired && half != null && v >= HyperSpec.OPEN_END * HyperSpec.LAUNCH_AT) {
                 fired = true
                 half()
             }
@@ -202,7 +202,7 @@ class WindowCard(c: Context) : View(c) {
         is0 = HyperSpec.iconScale(tc)
         closing = true
         cm = 0f
-        val total = (HyperSpec.CLOSE_END - HyperSpec.OPEN_END) + (HyperSpec.ICON_BACK_1_0 - HyperSpec.CLOSE_END)
+        val total = HyperSpec.CLOSE_MS + (HyperSpec.ICON_BACK_1_0 - HyperSpec.CLOSE_END)
         runHyper(0f, total, null) {
             closing = false
             visibility = INVISIBLE
@@ -305,7 +305,7 @@ class WindowCard(c: Context) : View(c) {
             iconSc = HyperSpec.iconScale(tc)
             iconA = 1f - cardA
         } else {
-            val cardMs = HyperSpec.CLOSE_END - HyperSpec.OPEN_END
+            val cardMs = HyperSpec.CLOSE_MS
             if (cm < cardMs) {
                 // карточка схлопывается в значок (q = 1 - u^1.45), темнеет к концу
                 val u = cm / cardMs
