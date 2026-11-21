@@ -114,7 +114,7 @@ class WindowCard(c: Context) : View(c) {
             if (closing) cm = v else tm = v
             if (!fired && half != null && v >= HyperSpec.OPEN_END * HyperSpec.LAUNCH_AT) {
                 fired = true
-                half()
+                post { half() }
             }
             invalidate()
         }
