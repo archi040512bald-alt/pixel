@@ -32,8 +32,10 @@ class MainActivity : HomeBase() {
     private lateinit var pinch: ScaleGestureDetector
     private var all = listOf<LauncherApp>()
     private var shown = listOf<LauncherApp>()
+    private var dockApps = listOf<LauncherApp>()
     private var dragApp: LauncherApp? = null
     private var dragItem: DeskItem? = null
+    private var dragFromDock: LauncherApp? = null
     private var moved = false
     private var ox = 0f
     private var oy = 0f
@@ -255,17 +257,14 @@ class MainActivity : HomeBase() {
                     true
                 }
                 DragEvent.ACTION_DROP -> {
-                    if (moved) {
-                        val di = dragItem
-                        if (di != null && prefs.drawer == 1 && e.y < dp(110) && !editing) desk.removeItem(di)
-                        else desk.drop(dragApp, di, e.x - desk.left, e.y - desk.top)
-                    }
+                    if (moved) dropAt(root, e.x, e.y)
                     true
                 }
                 DragEvent.ACTION_DRAG_ENDED -> {
                     trash.visibility = View.GONE
                     dragApp = null
                     dragItem = null
+                    dragFromDock = null
                     desk.rebuild()
                     desk.endDrag()
                     true
@@ -349,26 +348,109 @@ class MainActivity : HomeBase() {
         }
     }
 
-    private fun loadApps() {
-        all = queryApps(this)
-        filter("")
+    // ---- Док: список хранится в настройках, пустая строка = стандартный набор, "-" = пустой док ----
+    private fun dockKeys(): String = getSharedPreferences("launcher", MODE_PRIVATE).getString("dockKeys", "") ?: ""
+
+    private fun resolveDock(): List<LauncherApp> {
+        val k = dockKeys()
+        if (k == "-") return emptyList()
+        if (k.isNotEmpty()) return k.split(",").mapNotNull { key -> all.firstOrNull { it.key == key } }
         val intents = listOf(
             Intent(Intent.ACTION_DIAL),
             Intent(Intent.ACTION_VIEW, Uri.parse("sms:")),
             Intent(Intent.ACTION_VIEW, Uri.parse("https://")),
             Intent(MediaStore.ACTION_IMAGE_CAPTURE))
-        val dockApps = ArrayList<LauncherApp>()
+        val list = ArrayList<LauncherApp>()
         for (intent in intents) {
             val ri = packageManager.resolveActivity(intent, 0) ?: continue
             val a = all.firstOrNull { it.pkg == ri.activityInfo.packageName } ?: continue
-            dockApps.add(a)
+            list.add(a)
         }
-        desk.hide = dockApps.map { it.pkg }.toSet()
-        desk.setApps(all)
+        return list
+    }
+
+    private fun fillDock() {
         dock.removeAllViews()
         for (a in dockApps) {
-            dock.addView(makeCell(this, a, false) { x, v -> launch(x, v) }, LinearLayout.LayoutParams(0, -1, 1f))
+            dock.addView(makeCell(this, a, false, { x, v ->
+                startDrag(x, null, v)
+                dragFromDock = x
+                menuFor(x, null, v)
+            }) { x, v -> launch(x, v) }, LinearLayout.LayoutParams(0, -1, 1f))
         }
+    }
+
+    private fun setDock(list: List<LauncherApp>) {
+        val s = if (list.isEmpty()) "-" else list.joinToString(",") { it.key }
+        getSharedPreferences("launcher", MODE_PRIVATE).edit().putString("dockKeys", s).apply()
+        dockApps = list
+        desk.hide = list.map { it.pkg }.toSet()
+        fillDock()
+    }
+
+    private fun dockHit(root: View, x: Float, y: Float): Boolean {
+        val a = IntArray(2)
+        val b = IntArray(2)
+        dock.getLocationOnScreen(a)
+        root.getLocationOnScreen(b)
+        val l = a[0] - b[0]
+        val t = a[1] - b[1]
+        return x >= l && x <= l + dock.width && y >= t - dp(8) && y <= t + dock.height + dp(8)
+    }
+
+    private fun dockIndex(root: View, x: Float, n: Int): Int {
+        val a = IntArray(2)
+        val b = IntArray(2)
+        dock.getLocationOnScreen(a)
+        root.getLocationOnScreen(b)
+        val rel = (x - (a[0] - b[0])) / dock.width.coerceAtLeast(1).toFloat()
+        return Math.round(rel * n).coerceIn(0, n)
+    }
+
+    private fun dropAt(root: View, x: Float, y: Float) {
+        val di = dragItem
+        val da = dragApp
+        val fromDock = dragFromDock
+        val onDock = dockHit(root, x, y)
+        if (fromDock != null) {
+            // иконка из дока: переставить внутри дока или перенести на рабочий стол
+            val cur = dockApps.filter { it.key != fromDock.key }.toMutableList()
+            if (onDock) {
+                cur.add(dockIndex(root, x, cur.size), fromDock)
+                setDock(cur)
+            } else {
+                setDock(cur)
+                desk.drop(fromDock, null, x - desk.left, y - desk.top)
+            }
+            return
+        }
+        if (onDock && !editing) {
+            // иконку с рабочего стола или из меню можно положить в док
+            val app = da ?: di?.let { if (it.folder) null else all.firstOrNull { a -> a.key == it.keys[0] } }
+            if (app != null) {
+                if (dockApps.any { it.key == app.key }) return
+                if (dockApps.size >= 5) {
+                    Toast.makeText(this, L(this, "Док заполнен", "Dock is full"), Toast.LENGTH_SHORT).show()
+                    return
+                }
+                val cur = dockApps.toMutableList()
+                cur.add(dockIndex(root, x, cur.size), app)
+                setDock(cur)
+                if (di != null) desk.removeItem(di)
+                return
+            }
+        }
+        if (di != null && prefs.drawer == 1 && y < dp(110) && !editing) desk.removeItem(di)
+        else desk.drop(da, di, x - desk.left, y - desk.top)
+    }
+
+    private fun loadApps() {
+        all = queryApps(this)
+        filter("")
+        dockApps = resolveDock()
+        desk.hide = dockApps.map { it.pkg }.toSet()
+        desk.setApps(all)
+        fillDock()
     }
 
     private fun filter(q: String) {
