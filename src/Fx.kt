@@ -56,11 +56,16 @@ fun closeCurveOf(i: Int): Interpolator = when (i) {
 object Fx {
     private var cur = 0f
     private var blurAnim: ValueAnimator? = null
+    private var lastQ = -1f
 
     private fun hyper(p: Prefs): Boolean = p.preset == 1
 
     private fun setBlur(a: Activity, v: View, p: Prefs, r: Float) {
         if (Build.VERSION.SDK_INT < 31) return
+        // не пересоздаём эффект, пока радиус не изменился хотя бы на полпикселя (меньше нагрузки на каждом кадре)
+        val q = (r * 2f).toInt() / 2f
+        if (q == lastQ) return
+        lastQ = q
         if (!hyper(p) && a.windowManager.isCrossWindowBlurEnabled) {
             a.window.setBackgroundBlurRadius(r.toInt())
         } else {
@@ -89,13 +94,14 @@ object Fx {
 
     fun out(a: Activity, p: Prefs, target: View, home: View) {
         if (hyper(p)) {
-            // По видео: фон не уменьшается, значки тускнеют ~на 10% и размываются за ~87 мс (со сдвигом 13 мс).
-            val d = (HyperSpec.BLUR_END - HyperSpec.BLUR_START).toLong()
+            // Блюр и тусклость как в видео (за 87 мс), зум фона по настройке "Зум" идёт вместе с ростом карточки.
             val st = HyperSpec.BLUR_START.toLong()
-            target.animate().scaleX(1f).scaleY(1f).alpha(HyperSpec.ICON_DIM_MIN)
+            val z = 1f - p.zoom / 100f
+            val d = (HyperSpec.OPEN_END - HyperSpec.CARD_IN).toLong()
+            target.animate().scaleX(z).scaleY(z).alpha(HyperSpec.ICON_DIM_MIN)
                 .setStartDelay(st).setDuration(d)
-                .setInterpolator(DecelerateInterpolator(1f)).start()
-            blurTo(a, home, p, true, d, st)
+                .setInterpolator(DecelerateInterpolator(HyperSpec.OPEN_POWER / 2f)).start()
+            blurTo(a, home, p, true, (HyperSpec.BLUR_END - HyperSpec.BLUR_START).toLong(), st)
             return
         }
         val s = 1f - p.zoom / 100f
@@ -107,7 +113,7 @@ object Fx {
     fun back(a: Activity, p: Prefs, home: View, drawer: View, progress: Float) {
         val s = 1f - 0.08f * progress
         // Скорость возврата резкости в видео не попала в кадр, берём ту же длительность 100 мс.
-        val ms = if (hyper(p)) HyperSpec.BLUR_END.toLong() else (p.speed * 0.85f).toLong()
+        val ms = if (hyper(p)) (HyperSpec.CLOSE_MS * 1.35f).toLong() else (p.speed * 0.85f).toLong()
         val ip: Interpolator = if (hyper(p)) DecelerateInterpolator(1f) else curveOf(p.curve)
         home.animate().scaleX(s).scaleY(s).alpha(1f - progress).setStartDelay(0).setDuration(ms).setInterpolator(ip).start()
         drawer.animate().scaleX(1f).scaleY(1f).alpha(1f).setStartDelay(0).setDuration(ms).setInterpolator(ip).start()
