@@ -45,7 +45,8 @@ object LockTheme {
         // у серых обоев не подмешиваем случайный оттенок
         val sp = if (p[1] < 0.08f) 0f else p[1]
         val sq = if (q[1] < 0.08f) 0f else q[1]
-        val light = lightWall && !forceDark
+        // экран PIN всегда светлый, цвет берётся от обоев; тёмный вариант только для панели графического ключа
+        val light = !forceDark
         return if (light) {
             val ink = mk(p[0], if (sp == 0f) 0f else 0.35f + 0.4f * sp, 0.22f)
             Pal(

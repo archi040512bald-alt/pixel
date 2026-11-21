@@ -203,6 +203,7 @@ class AuthPanel(private val a: Activity, private val sp: LockPrefs,
         for (row in rows) {
             val rl = LinearLayout(a)
             rl.orientation = LinearLayout.HORIZONTAL
+            rl.gravity = Gravity.CENTER
             for (k in row) {
                 val lp = LinearLayout.LayoutParams(a.dp(72), a.dp(72))
                 lp.setMargins(a.dp(7), a.dp(6), a.dp(7), a.dp(6))
