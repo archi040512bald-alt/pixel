@@ -46,6 +46,9 @@ class MainActivity : HomeBase() {
     private var insB = 0
     private var homeMenu: HomeMenu? = null
     private var sheet: IconSheet? = null
+    private var wSheet: WidgetSheet? = null
+    private var pendWid = 0
+    private var pendInfo: android.appwidget.AppWidgetProviderInfo? = null
     private var searchShown = 0
     private var stopped = false
     private var pending: Runnable? = null
@@ -190,7 +193,8 @@ class MainActivity : HomeBase() {
         }
         edit.onHome = { showHomeMenu() }
         edit.onWidgets = {
-            Toast.makeText(this, L(this, "Виджеты скоро", "Widgets are coming soon"), Toast.LENGTH_SHORT).show()
+            exitEdit()
+            showWidgets()
         }
         edit.onSettings = {
             exitEdit()
@@ -281,6 +285,92 @@ class MainActivity : HomeBase() {
             applyProgress()
             desk.setFrac(homePage().toFloat())
         }
+    }
+
+    // ---- Виджеты ----
+    private fun showWidgets() {
+        if (wSheet != null) return
+        val s = WidgetSheet(this, insB, Widgets.providers(this), { desk.spanOf(it) }, { pickWidget(it) }, { closeWidgets() })
+        rootView.addView(s, s.params())
+        wSheet = s
+    }
+
+    private fun closeWidgets() {
+        val s = wSheet ?: return
+        wSheet = null
+        s.close { rootView.removeView(s) }
+    }
+
+    private fun pickWidget(info: android.appwidget.AppWidgetProviderInfo) {
+        closeWidgets()
+        val id = Widgets.host(this).allocateAppWidgetId()
+        pendWid = id
+        pendInfo = info
+        var ok = false
+        try {
+            ok = Widgets.mgr(this).bindAppWidgetIdIfAllowed(id, info.provider)
+        } catch (e: Exception) {
+        }
+        if (ok) {
+            afterBind()
+        } else {
+            // системный диалог с разрешением на добавление виджета
+            val i = Intent(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_BIND)
+            i.putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+            i.putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
+            try {
+                startActivityForResult(i, 51)
+            } catch (e: Exception) {
+                cancelWidget()
+            }
+        }
+    }
+
+    private fun afterBind() {
+        val info = pendInfo ?: return
+        if (info.configure != null) {
+            try {
+                Widgets.host(this).startAppWidgetConfigureActivityForResult(this, pendWid, 0, 52, null)
+            } catch (e: Exception) {
+                placeWidget()
+            }
+        } else {
+            placeWidget()
+        }
+    }
+
+    private fun placeWidget() {
+        val info = pendInfo
+        val id = pendWid
+        pendInfo = null
+        pendWid = 0
+        if (info == null || id == 0) return
+        val sp = desk.spanOf(info)
+        if (!desk.addWidget(id, sp[0], sp[1])) {
+            Widgets.delete(this, id)
+            Toast.makeText(this, L(this, "Нет места на рабочем столе", "No room on the desktop"), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun cancelWidget() {
+        if (pendWid != 0) Widgets.delete(this, pendWid)
+        pendWid = 0
+        pendInfo = null
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 51) {
+            if (resultCode == RESULT_OK) afterBind() else cancelWidget()
+        } else if (requestCode == 52) {
+            if (resultCode == RESULT_OK) placeWidget() else cancelWidget()
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Widgets.start(this)
     }
 
     private fun setHomePage() {
@@ -402,7 +492,7 @@ class MainActivity : HomeBase() {
     }
 
     private fun menuFor(a: LauncherApp?, item: DeskItem?, cell: View) {
-        val app = a ?: (item?.let { if (it.folder) null else all.firstOrNull { x -> x.key == it.keys[0] } }) ?: return
+        val app = a ?: (item?.let { if (it.folder || it.widget != 0) null else all.firstOrNull { x -> x.key == it.keys[0] } }) ?: return
         var remove: (() -> Unit)? = null
         if (item != null && prefs.drawer == 1) remove = { desk.removeItem(item) }
         try {
@@ -490,7 +580,7 @@ class MainActivity : HomeBase() {
         }
         if (onDock && !editing) {
             // иконку с рабочего стола или из меню можно положить в док
-            val app = da ?: di?.let { if (it.folder) null else all.firstOrNull { a -> a.key == it.keys[0] } }
+            val app = da ?: di?.let { if (it.folder || it.widget != 0) null else all.firstOrNull { a -> a.key == it.keys[0] } }
             if (app != null) {
                 if (dockApps.any { it.key == app.key }) return
                 if (dockApps.size >= 5) {
@@ -599,6 +689,10 @@ class MainActivity : HomeBase() {
             closeSheet()
             return
         }
+        if (wSheet != null) {
+            closeWidgets()
+            return
+        }
         if (editing) {
             exitEdit()
             return
@@ -608,6 +702,7 @@ class MainActivity : HomeBase() {
 
     override fun onStop() {
         super.onStop()
+        Widgets.stop(this)
         stopped = true
     }
 
