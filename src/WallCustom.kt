@@ -1,7 +1,10 @@
 package com.example.pixellauncher
 
+import android.app.Activity
+import android.app.Fragment
 import android.app.WallpaperManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -28,7 +31,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Размытие через сжатие и растяжение: level 1 = мягкое, 2 = сильное. */
+private fun wallPrefs(c: Context) = c.getSharedPreferences("wall_prefs", Context.MODE_PRIVATE)
+
 fun blurBitmap(src: Bitmap, level: Int): Bitmap {
     if (level <= 0) return src
     val div = if (level == 1) 10 else 26
@@ -39,7 +43,6 @@ fun blurBitmap(src: Bitmap, level: Int): Bitmap {
     return Bitmap.createScaledBitmap(b, src.width, src.height, true)
 }
 
-/** Обрезка по центру до пропорций w:h и масштаб до w x h. */
 fun fitBitmap(src: Bitmap, w: Int, h: Int): Bitmap {
     val sr = src.width.toFloat() / src.height
     val tr = w.toFloat() / h
@@ -56,7 +59,6 @@ fun fitBitmap(src: Bitmap, w: Int, h: Int): Bitmap {
     return Bitmap.createScaledBitmap(c, w, h, true)
 }
 
-/** Иконка параметра: 0 = картинка, 1 = куб (3D), 2 = размытие. */
 class OptIcon(c: Context, private val kind: Int) : View(c) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val r = RectF()
@@ -130,7 +132,6 @@ class CheckIcon(c: Context) : View(c) {
     }
 }
 
-/** Маленькие значки на превью экрана блокировки: 0 = фонарик, 1 = камера. */
 class MiniGlyph(c: Context, private val kind: Int) : View(c) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val r = RectF()
@@ -154,10 +155,17 @@ class MiniGlyph(c: Context, private val kind: Int) : View(c) {
     }
 }
 
-/**
- * Настройка обоев (как в системном экране): две страницы "Экран блокировки" и "Рабочий стол",
- * снизу Изображение, 3D-эффект (только для экрана блокировки) и Размытие.
- */
+@Suppress("DEPRECATION")
+class ImagePickFragment : Fragment() {
+    var onPicked: ((Uri) -> Unit)? = null
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 7711 && resultCode == Activity.RESULT_OK) {
+            data?.data?.let { onPicked?.invoke(it) }
+        }
+    }
+}
 class WallCustom(
     private val a: SettingsActivity,
     private val inT: Int,
@@ -170,9 +178,9 @@ class WallCustom(
     private val dm = a.resources.displayMetrics
     private val wm = WallpaperManager.getInstance(a)
     private val prefs = Prefs(a)
-    private val home = Tgt(null, prefs.homeBlur, false)
-    private val lock = Tgt(null, prefs.lockBlur, false)
-    private var lock3d = prefs.lock3d == 1
+    private val home = Tgt(null, wallPrefs(a).getInt("homeBlur", 0), false)
+    private val lock = Tgt(null, wallPrefs(a).getInt("lockBlur", 0), false)
+    private var lock3d = wallPrefs(a).getInt("lock3d", 0) == 1
     private val backdrop = ImageView(a)
     private val title = TextView(a)
     private val pager = WallPager(a)
@@ -282,7 +290,6 @@ class WallCustom(
         pager.onIndex = { setPage(it) }
     }
 
-    // превью экрана блокировки: дата, большие часы, кнопки внизу
     private fun lockOverlay(card: FrameLayout, cw: Float) {
         val date = TextView(a)
         date.text = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(Date())
@@ -405,8 +412,6 @@ class WallCustom(
         updateButtons()
         refreshPreview(page)
     }
-
-    // ---- загрузка и превью ----
     private fun bitmapOf(dr: Drawable?): Bitmap? {
         if (dr == null) return null
         if (dr is BitmapDrawable && dr.bitmap != null) return dr.bitmap
@@ -470,7 +475,6 @@ class WallCustom(
         backdrop.setImageBitmap(blurBitmap(fitBitmap(src, 90, 195), 2))
     }
 
-    // превью рабочего стола: значки приложений сеткой и док
     private fun buildHome(apps: List<LauncherApp>) {
         homeLayer.removeAllViews()
         val cw = (dm.widthPixels * 0.615f)
@@ -499,9 +503,20 @@ class WallCustom(
         }
     }
 
-    // ---- изображение ----
+    @Suppress("DEPRECATION")
     private fun pickImage() {
-        a.pickForCustom { uri -> loadUri(uri) }
+        val fm = a.fragmentManager
+        var frag = fm.findFragmentByTag("wall_pick") as? ImagePickFragment
+        if (frag == null) {
+            frag = ImagePickFragment()
+            fm.beginTransaction().add(frag, "wall_pick").commitNow()
+        }
+        frag.onPicked = { uri -> loadUri(uri) }
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+        }
+        frag.startActivityForResult(Intent.createChooser(intent, ""), 7711)
     }
 
     private fun loadUri(uri: Uri) {
@@ -531,7 +546,6 @@ class WallCustom(
         }.start()
     }
 
-    // ---- применение ----
     private fun saveJpg(b: Bitmap, name: String) {
         FileOutputStream(File(a.filesDir, name)).use { b.compress(Bitmap.CompressFormat.JPEG, 92, it) }
     }
@@ -562,9 +576,11 @@ class WallCustom(
             } catch (e: Exception) {
                 ok = false
             }
-            prefs.homeBlur = home.blur
-            prefs.lockBlur = lock.blur
-            prefs.lock3d = if (lock3d) 1 else 0
+            wallPrefs(a).edit()
+                .putInt("homeBlur", home.blur)
+                .putInt("lockBlur", lock.blur)
+                .putInt("lock3d", if (lock3d) 1 else 0)
+                .apply()
             a.runOnUiThread {
                 Toast.makeText(a, if (ok) L(a, "Обои сохранены", "Wallpapers saved") else L(a, "Не удалось сохранить обои", "Could not save wallpapers"),
                     Toast.LENGTH_SHORT).show()
