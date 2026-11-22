@@ -35,8 +35,27 @@ class SettingsActivity : AppCompatActivity() {
     private val rowStyle = com.google.android.material.R.style.TextAppearance_Material3_TitleLarge
     private val titleStyle = com.google.android.material.R.style.TextAppearance_Material3_TitleMedium
     private val bodyStyle = com.google.android.material.R.style.TextAppearance_Material3_BodyMedium
+    private var wall: WallScreen? = null
     private val pick = registerForActivityResult(ActivityResultContracts.GetContent()) { u: Uri? ->
-        if (u != null) applyWallpaper(this, u)
+        if (u != null) {
+            applyWallpaper(this, u)
+            wall?.refresh()
+        }
+    }
+
+    fun pickWallpaper() {
+        pick.launch("image/*")
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == WallScreen.REQ) wall?.onPermission()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (wall?.onBack() == true) return
+        super.onBackPressed()
     }
 
     private fun l(ru: String, en: String) = L(this, ru, en)
@@ -47,6 +66,20 @@ class SettingsActivity : AppCompatActivity() {
         p = Prefs(this)
         night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val screen = intent.getStringExtra("s") ?: "main"
+        if (screen == "wall") {
+            // экран обоев рисуется целиком отдельным видом (тёмный, как системный выбор обоев)
+            window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0xFF0F1114.toInt()))
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = Color.TRANSPARENT
+            window.navigationBarColor = Color.TRANSPARENT
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility and
+                android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+            val ws = WallScreen(this)
+            wall = ws
+            setContentView(ws)
+            return
+        }
 
         val colors = if (night) intArrayOf(0xFF171C21.toInt(), 0xFF0E1216.toInt())
         else intArrayOf(0xFFEAF2F8.toInt(), 0xFFDAE6EE.toInt())
