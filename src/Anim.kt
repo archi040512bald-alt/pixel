@@ -4,6 +4,7 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -24,6 +25,11 @@ class WindowCard(c: Context) : View(c) {
     private var t = 0f
     private var shown = false
     private var hyper = false
+    private var pixel = false
+    private var pxClosing = false
+    private var pu = 0f
+    private var pP0 = 1f
+    private var splash = Color.WHITE
     private var reach = 50
     private var a0 = 0f
     private var tint = 0xFF1B1B1D.toInt()
@@ -172,9 +178,16 @@ class WindowCard(c: Context) : View(c) {
     fun expand(rect: RectF, v: View, half: () -> Unit) {
         val p = Prefs(context)
         hyper = p.preset == 1
+        pixel = p.preset == 2
         reach = p.reach
         a0 = reach / 100f * 0.92f
         if (hyper) tint = hyperColor(v)
+        if (pixel) {
+            splash = pixelSplash(v)
+            pu = 0f
+            pxClosing = false
+            cm = 0f
+        }
         restore()
         hidden = hideView
         hideView = null
@@ -186,7 +199,9 @@ class WindowCard(c: Context) : View(c) {
         cm = 0f
         closing = false
         shown = true
-        if (hyper) {
+        if (pixel) {
+            runPixel(0f, PixelSpec.OPEN_MS, half) {}
+        } else if (hyper) {
             runHyper(0f, HyperSpec.OPEN_END, half) {}
         } else {
             ease = easeFor()
@@ -213,6 +228,10 @@ class WindowCard(c: Context) : View(c) {
     fun collapse() {
         if (!shown) return
         shown = false
+        if (pixel) {
+            pixelClose()
+            return
+        }
         if (hyper) {
             hyperClose()
             return
@@ -228,6 +247,10 @@ class WindowCard(c: Context) : View(c) {
     fun cancel() {
         if (!shown) return
         shown = false
+        if (pixel) {
+            pixelClose()
+            return
+        }
         if (hyper) {
             hyperClose()
             return
@@ -240,8 +263,136 @@ class WindowCard(c: Context) : View(c) {
         }
     }
 
+    // ---------- Пресет Pixel: время идёт в мс, формы заданы в PixelSpec ----------
+    private fun pixelSplash(v: View): Int {
+        val surface = if ((context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES) Color.rgb(0x1F, 0x1F, 0x1F) else Color.WHITE
+        if (v.width <= 0 || v.height <= 0) return surface
+        val b = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+        val cv = Canvas(b)
+        cv.scale(8f / v.width, 8f / v.height)
+        v.draw(cv)
+        var r = 0
+        var g = 0
+        var bl = 0
+        var n = 0
+        for (y in 0 until 8) {
+            for (x in 0 until 8) {
+                if (x != 0 && x != 7 && y != 0 && y != 7 && x != 1 && x != 6 && y != 1 && y != 6) continue
+                val p = b.getPixel(x, y)
+                if (Color.alpha(p) > 200) {
+                    r += Color.red(p)
+                    g += Color.green(p)
+                    bl += Color.blue(p)
+                    n++
+                }
+            }
+        }
+        b.recycle()
+        if (n < 6) return surface
+        r /= n
+        g /= n
+        bl /= n
+        // у светлых значков на белом фоне (как YouTube) заставка белая, иначе по теме системы
+        return if (r > 225 && g > 225 && bl > 225) Color.WHITE else surface
+    }
+
+    private fun runPixel(fromV: Float, toV: Float, half: (() -> Unit)?, end: () -> Unit) {
+        val old = anim
+        anim = null
+        old?.cancel()
+        var fired = false
+        val va = ValueAnimator.ofFloat(fromV, toV)
+        anim = va
+        visibility = VISIBLE
+        va.duration = (toV - fromV).toLong().coerceAtLeast(1L)
+        va.interpolator = LinearInterpolator()
+        va.addUpdateListener {
+            val v = it.animatedValue as Float
+            if (!pxClosing) {
+                tm = v
+                pu = PixelSpec.OPEN.getInterpolation((v / PixelSpec.OPEN_MS).coerceIn(0f, 1f))
+                if (!fired && half != null && v >= PixelSpec.OPEN_MS * PixelSpec.LAUNCH_AT) {
+                    fired = true
+                    post { half() }
+                }
+            } else {
+                cm = v
+                val u = (v / PixelSpec.CLOSE_MS).coerceIn(0f, 1f)
+                pu = pP0 * (1f - PixelSpec.closeEase(u))
+            }
+            invalidate()
+        }
+        va.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(x: Animator) {
+                if (anim === va) end()
+            }
+        })
+        va.start()
+    }
+
+    private fun pixelClose() {
+        pP0 = pu
+        pxClosing = true
+        cm = 0f
+        runPixel(0f, PixelSpec.CLOSE_MS + PixelSpec.SETTLE_MS, null) {
+            pxClosing = false
+            visibility = INVISIBLE
+            restore()
+        }
+    }
+
+    private fun drawPixel(cv: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val v = src
+        if (pxClosing && cm >= PixelSpec.CLOSE_MS) {
+            // окно исчезло: значок возвращается с выскоком 1.18 -> 1.0
+            if (v == null || v.width <= 0) return
+            val u = ((cm - PixelSpec.CLOSE_MS) / PixelSpec.SETTLE_MS).coerceIn(0f, 1f)
+            val k = 1f - (1f - u) * (1f - u)
+            val sc = 1f + (PixelSpec.ICON_POP - 1f) * (1f - k)
+            val n = cv.save()
+            cv.translate(from.centerX(), from.centerY())
+            cv.scale(sc, sc)
+            cv.translate(-v.width / 2f, -v.height / 2f)
+            v.draw(cv)
+            cv.restoreToCount(n)
+            return
+        }
+        val p = pu
+        val l = from.left * (1f - p)
+        val t = from.top * (1f - p)
+        val r = from.right + (w - from.right) * p
+        val b = from.bottom + (h - from.bottom) * p
+        val iconR = from.width() * 0.36f
+        val devR = w * PixelSpec.DEVICE_R_W
+        val rad = if (p >= 0.97f) devR * (1f - (p - 0.97f) / 0.03f)
+        else iconR + (devR - iconR) * (p / 0.6f).coerceIn(0f, 1f)
+        var fade = 1f
+        if (pxClosing) {
+            val u = cm / PixelSpec.CLOSE_MS
+            if (u > 0.65f) fade = 1f - (u - 0.65f) / 0.35f
+        }
+        paint.color = splash
+        paint.alpha = (255f * (p / 0.18f).coerceIn(0f, 1f) * fade.coerceIn(0f, 1f)).toInt()
+        box.set(l, t, r, b)
+        cv.drawRoundRect(box, maxOf(0f, rad), maxOf(0f, rad), paint)
+        if (v != null && v.width > 0 && fade > 0f) {
+            val size = from.width() + (PixelSpec.SPLASH_ICON_W * w - from.width()) * (p / 0.5f).coerceIn(0f, 1f)
+            val sc = size / v.width
+            val n = cv.save()
+            cv.translate((l + r) / 2f, (t + b) / 2f)
+            cv.scale(sc, sc)
+            cv.translate(-v.width / 2f, -v.height / 2f)
+            layerAlpha(cv, v.width.toFloat(), v.height.toFloat(), (255f * fade.coerceIn(0f, 1f)).toInt())
+            v.draw(cv)
+            cv.restoreToCount(n)
+        }
+    }
+
     override fun onDraw(cv: Canvas) {
-        if (hyper) drawHyper(cv) else drawStd(cv)
+        if (pixel) drawPixel(cv) else if (hyper) drawHyper(cv) else drawStd(cv)
     }
 
     private fun drawStd(cv: Canvas) {

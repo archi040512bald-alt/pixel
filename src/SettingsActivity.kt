@@ -258,7 +258,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun anim() {
         head(l("Пресет", "Preset"))
-        radios(listOf(presetName(this, 0), presetName(this, 1), presetName(this, 2)), p.preset) {
+        radios(listOf(presetName(this, 0), presetName(this, 1), presetName(this, 2), presetName(this, 3)), p.preset) {
             p.applyPreset(it)
             recreate()
         }

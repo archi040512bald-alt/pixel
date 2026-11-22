@@ -615,6 +615,7 @@ class MainActivity : HomeBase() {
         super.onResume()
         stopped = false
         if (::card.isInitialized) card.collapse()
+        if (::card.isInitialized && prefs.preset == 2) Fx.back(this, prefs, home, drawer, progress)
     }
 
     override fun onDestroy() {

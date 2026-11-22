@@ -26,7 +26,8 @@ fun L(c: Context, ru: String, en: String): String {
 
 fun presetName(c: Context, i: Int): String = when (i) {
     1 -> "HyperOS  NEW"
-    2 -> "iOS  Soon"
+    2 -> "Pixel  NEW"
+    3 -> "iOS  Soon"
     else -> L(c, "Стандарт", "Standard")
 }
 
@@ -59,6 +60,7 @@ object Fx {
     private var lastQ = -1f
 
     private fun hyper(p: Prefs): Boolean = p.preset == 1
+    private fun pixel(p: Prefs): Boolean = p.preset == 2
 
     private fun setBlur(a: Activity, v: View, p: Prefs, r: Float) {
         if (Build.VERSION.SDK_INT < 31) return
@@ -66,7 +68,7 @@ object Fx {
         val q = (r * 2f).toInt() / 2f
         if (q == lastQ) return
         lastQ = q
-        if (!hyper(p) && a.windowManager.isCrossWindowBlurEnabled) {
+        if (!hyper(p) && !pixel(p) && a.windowManager.isCrossWindowBlurEnabled) {
             a.window.setBackgroundBlurRadius(r.toInt())
         } else {
             v.setRenderEffect(if (r < 1f) null else RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP))
@@ -76,14 +78,15 @@ object Fx {
     private fun blurTo(a: Activity, v: View, p: Prefs, on: Boolean, ms: Long, delay: Long = 0L) {
         if (Build.VERSION.SDK_INT < 31) return
         val target = if (on && p.blur == 1) {
-            if (hyper(p)) HyperSpec.BLUR_SIGMA_W * a.resources.displayMetrics.widthPixels
+            if (pixel(p)) PixelSpec.BLUR_SIGMA_W * a.resources.displayMetrics.widthPixels
+            else if (hyper(p)) HyperSpec.BLUR_SIGMA_W * a.resources.displayMetrics.widthPixels
             else p.blurR * a.resources.displayMetrics.density
         } else 0f
         blurAnim?.cancel()
         val va = ValueAnimator.ofFloat(cur, target)
         va.duration = ms
         va.startDelay = delay
-        if (hyper(p)) va.interpolator = DecelerateInterpolator(1f)
+        if (hyper(p) || pixel(p)) va.interpolator = DecelerateInterpolator(1f)
         va.addUpdateListener {
             cur = it.animatedValue as Float
             setBlur(a, v, p, cur)
@@ -93,6 +96,14 @@ object Fx {
     }
 
     fun out(a: Activity, p: Prefs, target: View, home: View) {
+        if (pixel(p)) {
+            // Pixel: домашний экран размывается и темнеет, пока окно открыто (зум по настройке "Зум", по умолчанию 0)
+            val z = 1f - p.zoom / 100f
+            target.animate().scaleX(z).scaleY(z).alpha(PixelSpec.DIM).setStartDelay(0).setDuration(200)
+                .setInterpolator(DecelerateInterpolator(1.5f)).start()
+            blurTo(a, home, p, true, 200L, 0L)
+            return
+        }
         if (hyper(p)) {
             // Блюр и тусклость как в видео (за 87 мс), зум фона по настройке "Зум" идёт вместе с ростом карточки.
             val st = HyperSpec.BLUR_START.toLong()
@@ -111,6 +122,16 @@ object Fx {
     }
 
     fun back(a: Activity, p: Prefs, home: View, drawer: View, progress: Float) {
+        if (pixel(p)) {
+            // Pixel: после закрытия окна (около 120 мс) фон за 130 мс становится резким
+            val ip2 = DecelerateInterpolator(1.5f)
+            val ms2 = PixelSpec.SETTLE_MS.toLong()
+            home.animate().scaleX(1f - 0.08f * progress).scaleY(1f - 0.08f * progress).alpha(1f - progress)
+                .setStartDelay(120).setDuration(ms2).setInterpolator(ip2).start()
+            drawer.animate().scaleX(1f).scaleY(1f).alpha(1f).setStartDelay(0).setDuration(ms2).setInterpolator(ip2).start()
+            blurTo(a, home, p, false, ms2, 120L)
+            return
+        }
         val s = 1f - 0.08f * progress
         // Скорость возврата резкости в видео не попала в кадр, берём ту же длительность 100 мс.
         val ms = if (hyper(p)) (HyperSpec.CLOSE_MS * 1.35f).toLong() else (p.speed * 0.85f).toLong()

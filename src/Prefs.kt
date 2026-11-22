@@ -53,7 +53,8 @@ class Prefs(c: Context) {
     fun applyPreset(i: Int) {
         val d = when (i) {
             1 -> intArrayOf(32, 420, 0, 1, 16, 6, 1)
-            2 -> intArrayOf(44, 400, 0, 0, 12, -10, 2)
+            2 -> intArrayOf(40, 300, 0, 1, 12, 0, 0)
+            3 -> intArrayOf(44, 400, 0, 0, 12, -10, 2)
             else -> intArrayOf(40, 340, 0, 0, 12, 8, 0)
         }
         preset = i
