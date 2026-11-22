@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
+import android.view.View
 import android.widget.LinearLayout
 import android.widget.RadioGroup
 import android.widget.ScrollView
@@ -198,15 +199,27 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun radios(items: List<String>, checked: Int, on: (Int) -> Unit) {
         val g = RadioGroup(this)
+        // уникальные id и без сохранения состояния: иначе после recreate() кнопки из разных групп
+        // с одинаковыми id восстанавливаются неверно и запускают бесконечное пересоздание экрана
+        g.isSaveEnabled = false
+        val ids = IntArray(items.size) { View.generateViewId() }
         for (i in items.indices) {
             val r = MaterialRadioButton(this)
             r.text = tagged(items[i])
             r.isEnabled = !items[i].endsWith("Soon")
-            r.id = 100 + i
+            r.id = ids[i]
+            r.isSaveEnabled = false
             g.addView(r)
         }
-        g.check(100 + checked)
-        g.setOnCheckedChangeListener { _, id -> on(id - 100) }
+        var cur = checked.coerceIn(0, items.size - 1)
+        g.check(ids[cur])
+        g.setOnCheckedChangeListener { _, id ->
+            val idx = ids.indexOf(id)
+            if (idx >= 0 && idx != cur) {
+                cur = idx
+                on(idx)
+            }
+        }
         list.addView(g)
     }
 
