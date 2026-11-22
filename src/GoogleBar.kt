@@ -18,7 +18,9 @@ class GoogleBar(c: Context) : TextView(c) {
     private val r2 = RectF()
     private val d = c.resources.displayMetrics.density
     private val night = (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-    private val ink = if (night) 0xFFC4C7CC.toInt() else 0xFF5F6368.toInt()
+    private val pr = Prefs(c)
+    private var bgColor = if (night) 0xFF303540.toInt() else 0xFFE9E8F0.toInt()
+    private var ink = if (night) 0xFFC4C7CC.toInt() else 0xFF5F6368.toInt()
 
     private fun px(v: Float) = v * d
     private fun lensCx() = width - px(30f)
@@ -26,36 +28,63 @@ class GoogleBar(c: Context) : TextView(c) {
 
     init {
         contentDescription = "Google"
+        // цвет панели: 0 = по умолчанию, 1 = от обоев (Material You), 2 = свой цвет
+        when (pr.searchColor) {
+            1 -> {
+                val pal = IconTheme.palette(c, IconTheme.WALLPAPER, 0)
+                bgColor = pal[0]
+                ink = pal[1]
+            }
+            2 -> {
+                val pal = IconTheme.palette(c, IconTheme.CUSTOM, pr.searchSeed)
+                bgColor = pal[0]
+                ink = pal[1]
+            }
+        }
     }
 
     override fun onDraw(cv: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
         p.style = Paint.Style.FILL
-        p.color = if (night) 0xFF303540.toInt() else 0xFFE9E8F0.toInt()
+        p.color = bgColor
         r.set(0f, 0f, w, h)
         cv.drawRoundRect(r, h / 2f, h / 2f, p)
         val cy = h / 2f
-        drawG(cv, px(34f), cy)
+        when (pr.searchIcon) {
+            0 -> drawG(cv, px(34f), cy, true)
+            1 -> drawG(cv, px(34f), cy, false)
+            2 -> drawGlass(cv, px(34f), cy)
+        }
         drawMic(cv, micCx(), cy)
         drawLens(cv, lensCx(), cy)
     }
 
-    private fun drawG(cv: Canvas, cx: Float, cy: Float) {
+    private fun drawGlass(cv: Canvas, cx: Float, cy: Float) {
+        p.color = ink
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = px(2.4f)
+        p.strokeCap = Paint.Cap.ROUND
+        cv.drawCircle(cx - px(2f), cy - px(2f), px(7f), p)
+        cv.drawLine(cx + px(3f), cy + px(3f), cx + px(9f), cy + px(9f), p)
+    }
+
+    private fun drawG(cv: Canvas, cx: Float, cy: Float, colorful: Boolean) {
         val sw = px(3.6f)
         val rad = px(10f) - sw / 2f
         r.set(cx - rad, cy - rad, cx + rad, cy + rad)
         p.style = Paint.Style.STROKE
         p.strokeWidth = sw
         p.strokeCap = Paint.Cap.BUTT
-        p.color = 0xFFEA4335.toInt()
+        p.color = if (colorful) 0xFFEA4335.toInt() else ink
         cv.drawArc(r, 215f, 100f, false, p)
-        p.color = 0xFFFBBC05.toInt()
+        p.color = if (colorful) 0xFFFBBC05.toInt() else ink
         cv.drawArc(r, 135f, 80f, false, p)
-        p.color = 0xFF34A853.toInt()
+        p.color = if (colorful) 0xFF34A853.toInt() else ink
         cv.drawArc(r, 45f, 90f, false, p)
-        p.color = 0xFF4285F4.toInt()
+        p.color = if (colorful) 0xFF4285F4.toInt() else ink
         cv.drawArc(r, 0f, 45f, false, p)
+        p.color = if (colorful) 0xFF4285F4.toInt() else ink
         p.style = Paint.Style.FILL
         r2.set(cx, cy - sw / 2f, cx + rad + sw / 2f, cy + sw / 2f)
         cv.drawRect(r2, p)

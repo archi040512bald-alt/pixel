@@ -58,7 +58,7 @@ object IconTheme {
     }
 
     // [фон, значок]
-    private fun palette(c: Context, style: Int, seed: Int): IntArray {
+    fun palette(c: Context, style: Int, seed: Int): IntArray {
         if (style == DARK) return intArrayOf(0xFF1C1B1F.toInt(), 0xFFE6E1E5.toInt())
         val dark = darkTone(c)
         if (style == CLEAR) {

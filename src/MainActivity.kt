@@ -382,7 +382,7 @@ class MainActivity : HomeBase() {
     }
 
     private fun relayout() {
-        if (prefs.searchStyle != searchShown) applySearch()
+        if (prefs.searchStyle != searchShown || prefs.searchStyle == 1) applySearch()
         look()
         grid.numColumns = prefs.cols
         loadApps()
