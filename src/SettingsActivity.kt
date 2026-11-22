@@ -215,7 +215,25 @@ class SettingsActivity : AppCompatActivity() {
         toggle(l("Фон для дока", "Dock background"), p.dockBg == 1) { p.dockBg = if (it) 1 else 0 }
         slider(l("Скругление фона дока", "Dock corner radius"), 0, 40, p.dockR, " dp") { p.dockR = it }
         toggle(l("Панель поиска", "Search bar"), p.search == 1) { p.search = if (it) 1 else 0 }
-        radios(listOf(l("Текущая панель", "Current bar"), l("Google поиск", "Google search")), p.searchStyle) { p.searchStyle = it }
+        radios(listOf(l("Текущая панель", "Current bar"), l("Google поиск", "Google search")), p.searchStyle) {
+            p.searchStyle = it
+            recreate()
+        }
+        run {
+            head(l("Цвет панели поиска", "Search bar color"))
+            if (p.searchStyle != 1) {
+                val sn = text(l("Работает для панели «Google поиск»: выберите её выше", "Works for the Google search bar: choose it above"), bodyStyle)
+                sn.alpha = 0.7f
+                list.addView(sn)
+            }
+            radios(listOf(l("По умолчанию", "Default"), l("Цвета обоев", "Wallpaper colors"), l("Свой цвет", "Custom color")), p.searchColor) {
+                p.searchColor = it
+                recreate()
+            }
+            if (p.searchColor == 2) radios(IconTheme.seedNames(this), p.searchSeed) { p.searchSeed = it }
+            head(l("Значок Google", "Google icon"))
+            radios(listOf(l("Цветной", "Colourful"), l("Одноцветный", "Single colour"), l("Лупа", "Magnifier"), l("Без значка", "None")), p.searchIcon) { p.searchIcon = it }
+        }
         head(l("Страницы", "Pages"))
         toggle(l("Индикатор страниц", "Page indicator"), p.dots == 1) { p.dots = if (it) 1 else 0 }
         head(l("Меню приложений", "App drawer"))
