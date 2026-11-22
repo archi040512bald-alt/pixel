@@ -273,7 +273,10 @@ class SettingsActivity : AppCompatActivity() {
         if (p.iconStyle != IconTheme.OFF) {
             if (p.iconStyle == IconTheme.CUSTOM) {
                 head(l("Цвет значков", "Icon color"))
-                radios(IconTheme.seedNames(this), p.iconSeed) { p.iconSeed = it }
+                radios(IconTheme.seedNames(this), p.iconSeed) {
+                    p.iconSeed = it
+                    p.iconHue = -1
+                }
             }
             head(l("Оттенок значков", "Icon tone"))
             radios(listOf(l("Авто", "Auto"), l("Светлые", "Light"), l("Тёмные", "Dark")), p.iconTone) { p.iconTone = it }

@@ -58,7 +58,7 @@ object IconTheme {
     }
 
     // [фон, значок]
-    fun palette(c: Context, style: Int, seed: Int): IntArray {
+    fun palette(c: Context, style: Int, seed: Int, hue: Int = -1): IntArray {
         if (style == DARK) return intArrayOf(0xFF1C1B1F.toInt(), 0xFFE6E1E5.toInt())
         val dark = darkTone(c)
         if (style == CLEAR) {
@@ -70,7 +70,7 @@ object IconTheme {
         }
         val hsv = FloatArray(3)
         Color.colorToHSV(SEEDS[seed.coerceIn(0, SEEDS.size - 1)], hsv)
-        val h = hsv[0]
+        val h = if (hue >= 0) hue.toFloat() else hsv[0]
         return if (dark) intArrayOf(Color.HSVToColor(floatArrayOf(h, 0.45f, 0.28f)), Color.HSVToColor(floatArrayOf(h, 0.18f, 0.95f)))
         else intArrayOf(Color.HSVToColor(floatArrayOf(h, 0.22f, 0.97f)), Color.HSVToColor(floatArrayOf(h, 0.75f, 0.28f)))
     }
@@ -142,7 +142,7 @@ object IconTheme {
     /** Возвращает тематический значок или исходный, если стиль выключен или перекрасить не удалось. */
     fun apply(c: Context, d: Drawable, style: Int, seed: Int, all: Boolean): Drawable {
         if (style == OFF || Build.VERSION.SDK_INT < 26) return d
-        val pal = palette(c, style, seed)
+        val pal = palette(c, style, seed, if (style == CUSTOM) Prefs(c).iconHue else -1)
         var fg: Drawable? = null
         if (Build.VERSION.SDK_INT >= 33 && d is AdaptiveIconDrawable) fg = d.monochrome
         if (fg == null && all) fg = glyph(c, d)

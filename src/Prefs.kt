@@ -46,6 +46,8 @@ class Prefs(c: Context) {
     var badges by int("badges", 1)
     var searchStyle by int("searchStyle", 0)
     var iconTone by int("iconTone", 0)
+    var iconHue by int("iconHue", -1)
+    var iconRev by int("iconRev", 0)
     var searchColor by int("searchColor", 0)
     var searchSeed by int("searchSeed", 0)
     var searchIcon by int("searchIcon", 0)
@@ -72,7 +74,7 @@ class Prefs(c: Context) {
 
     fun listen(cb: (String) -> Unit) {
         val keys = setOf("shape", "cols", "rows", "pack", "lang", "dockBg", "dockR", "iconSize",
-            "labels", "search", "drawer", "dots", "iconStyle", "iconSeed", "iconAll", "badges", "searchStyle", "iconTone", "searchColor", "searchSeed", "searchIcon")
+            "labels", "search", "drawer", "dots", "iconStyle", "iconSeed", "iconAll", "badges", "searchStyle", "iconTone", "iconRev", "searchColor", "searchSeed", "searchIcon")
         val x = SharedPreferences.OnSharedPreferenceChangeListener { _, k ->
             if (k != null && k in keys) cb(k)
         }

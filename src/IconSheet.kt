@@ -14,6 +14,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
+import android.widget.SeekBar
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -111,6 +112,9 @@ class IconSheet(
     private val tiles = ArrayList<FrameLayout>()
     private val labels = ArrayList<TextView>()
     private var tone: Segmented? = null
+    private var hueRow: LinearLayout? = null
+    private var seek: SeekBar? = null
+    private var chip: TextView? = null
     private var dragging = false
     private var startInHeader = false
     private var dy0 = 0f
@@ -123,6 +127,11 @@ class IconSheet(
         lp.setMargins(a.dp(12), 0, a.dp(12), inB + a.dp(10))
         return lp
     }
+
+    // плитка "С оттенком": свой цвет по ползунку, а если он не выбран, то цвета обоев
+    private fun tintedStyle(): Int = if (p.iconHue >= 0) IconTheme.CUSTOM else IconTheme.WALLPAPER
+
+    private fun styleOf(i: Int): Int = if (i == 3) tintedStyle() else styleIds[i]
 
     private fun styleIndex(): Int = when (p.iconStyle) {
         IconTheme.OFF -> 0
@@ -221,6 +230,60 @@ class IconSheet(
         sl.topMargin = a.dp(12)
         addView(s, sl)
 
+        // ползунок цвета, виден только при выбранном стиле "С оттенком"
+        val hr = LinearLayout(a)
+        hr.orientation = HORIZONTAL
+        hr.gravity = Gravity.CENTER_VERTICAL
+        val ch = TextView(a)
+        ch.text = L(a, "Обои", "Wallpaper")
+        ch.textSize = 14f
+        ch.setPadding(a.dp(14), a.dp(8), a.dp(14), a.dp(8))
+        ch.setOnClickListener { useWallpaper() }
+        chip = ch
+        hr.addView(ch, LayoutParams(-2, -2))
+        val sk = SeekBar(a)
+        sk.max = 360
+        sk.progress = if (p.iconHue >= 0) p.iconHue else 220
+        val rb = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(
+            0xFFFF0000.toInt(), 0xFFFFFF00.toInt(), 0xFF00FF00.toInt(), 0xFF00FFFF.toInt(),
+            0xFF0000FF.toInt(), 0xFFFF00FF.toInt(), 0xFFFF0000.toInt()))
+        rb.cornerRadius = a.dp(6).toFloat()
+        rb.setSize(0, a.dp(12))
+        sk.progressDrawable = rb
+        val th = GradientDrawable()
+        th.shape = GradientDrawable.OVAL
+        th.setColor(Color.WHITE)
+        th.setStroke(a.dp(2), 0x55000000)
+        th.setSize(a.dp(26), a.dp(26))
+        sk.thumb = th
+        sk.splitTrack = false
+        sk.setPadding(a.dp(14), 0, a.dp(14), 0)
+        sk.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, v: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    p.iconHue = v
+                    fillTile(tiles[3], 3)
+                    chip?.let { styleChip(it) }
+                }
+            }
+
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+
+            // применяем ко всем значкам, когда палец отпущен (при перетаскивании меняем только превью)
+            override fun onStopTrackingTouch(s: SeekBar?) {
+                p.iconAll = 1
+                p.iconStyle = IconTheme.CUSTOM
+                p.iconRev = p.iconRev + 1
+                refresh()
+            }
+        })
+        seek = sk
+        hr.addView(sk, LayoutParams(0, -2, 1f))
+        hueRow = hr
+        val hrl = LayoutParams(-1, -2)
+        hrl.topMargin = a.dp(14)
+        addView(hr, hrl)
+
         val moreText = TextView(a)
         moreText.text = L(a, "Больше настроек…", "More Options…")
         moreText.setTextColor(0xFF4C8DFF.toInt())
@@ -241,20 +304,41 @@ class IconSheet(
     // превью значка в выбранном стиле (рисуется тем же кодом, что и значки на экране)
     private fun fillTile(tile: FrameLayout, i: Int) {
         tile.removeAllViews()
-        val d = IconTheme.apply(a, raw, styleIds[i], p.iconSeed, true)
+        val d = IconTheme.apply(a, raw, styleOf(i), p.iconSeed, true)
         val icon = ShapedIcon(a, d, p.shape)
         val lp = FrameLayout.LayoutParams(a.dp(56), a.dp(56), Gravity.CENTER)
         tile.addView(icon, lp)
     }
 
     private fun chooseStyle(i: Int) {
-        p.iconStyle = styleIds[i]
-        if (styleIds[i] != IconTheme.OFF) p.iconAll = 1
+        p.iconStyle = styleOf(i)
+        if (styleOf(i) != IconTheme.OFF) p.iconAll = 1
+        refresh()
+    }
+
+    private fun styleChip(c: TextView) {
+        val g = GradientDrawable()
+        g.cornerRadius = a.dp(18).toFloat()
+        val on = p.iconHue < 0
+        g.setColor(if (on) 0xFF7F8CFF.toInt() else 0x33FFFFFF)
+        c.background = g
+        c.setTextColor(if (on) Color.WHITE else 0xFFC9CCD2.toInt())
+    }
+
+    private fun useWallpaper() {
+        p.iconHue = -1
+        p.iconStyle = IconTheme.WALLPAPER
+        p.iconAll = 1
+        p.iconRev = p.iconRev + 1
+        fillTile(tiles[3], 3)
         refresh()
     }
 
     private fun refresh() {
         val sel = styleIndex()
+        hueRow?.visibility = if (sel == 3) View.VISIBLE else View.GONE
+        chip?.let { styleChip(it) }
+        seek?.alpha = if (p.iconHue >= 0) 1f else 0.5f
         for (i in 0 until 4) {
             val ring = GradientDrawable()
             ring.cornerRadius = a.dp(20).toFloat()
