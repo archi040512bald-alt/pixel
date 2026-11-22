@@ -34,7 +34,9 @@ cp src/AndroidManifest.xml $D/
 cp src/themes.xml $D/res/values/
 cp src/launcher_theme.xml $D/res/values/
 sed -i 's|@android:style/Theme.DeviceDefault.Wallpaper.NoTitleBar|@style/LauncherTheme|' $D/AndroidManifest.xml
+sed -i '/<application/i\    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />' $D/AndroidManifest.xml
 grep -q '@style/LauncherTheme' $D/AndroidManifest.xml
+grep -q 'READ_MEDIA_IMAGES' $D/AndroidManifest.xml
 ICON=$(ls src/*.png 2>/dev/null | head -1)
 if [ -n "$ICON" ]; then
   mkdir -p $D/res/drawable-nodpi
