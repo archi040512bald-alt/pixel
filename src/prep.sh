@@ -12,6 +12,8 @@ sed -i '/"Launch delay"/a\        slider(l("Дальность карточки"
 sed -i 's/window\.navigationBarColor = Color\.TRANSPARENT/window.navigationBarColor = Color.TRANSPARENT; if (Build.VERSION.SDK_INT >= 28) window.navigationBarDividerColor = Color.TRANSPARENT/' $K/MainActivity.kt
 sed -i 's/card\.expand(rect, sourceIcon(this, a, icon)) {/card.hideView = icon; card.expand(rect, sourceIcon(this, a, icon)) {/' $K/MainActivity.kt
 sed -i '/{ go("anim") }/a\                row("lock", l("Экран блокировки", "Lock screen"), l("Пароль, уведомления, отпечаток", "Passcode, notifications, fingerprint")) { startActivity(Intent(this, LockSettingsActivity::class.java)) }' $K/SettingsActivity.kt
+sed -i 's/val ws = WallScreen(this)/val ws = WallCustom(this, 0, 0) { finish() }/' $K/SettingsActivity.kt
+sed -i 's/wall = ws//' $K/SettingsActivity.kt
 sed -i '/"chev" -> {/i\            "lock" -> { fill(); sq(cv, 5f, 10.5f, 19f, 21f, 3f); stroke(2.2f); path.moveTo(8.5f, 10.5f); path.lineTo(8.5f, 7.5f); path.cubicTo(8.5f, 2.5f, 15.5f, 2.5f, 15.5f, 7.5f); path.lineTo(15.5f, 10.5f); cv.drawPath(path, p) }' $K/Glyphs.kt
 sed -i 's/menu = AppMenu(this, root)/menu = AppMenu(this, root); LockHost.attach(this, root, { home.visibility = View.INVISIBLE; drawer.visibility = View.INVISIBLE }, { home.visibility = View.VISIBLE; applyProgress() })/' $K/MainActivity.kt
 sed -i 's/if (::card.isInitialized) card.collapse()/if (::card.isInitialized) card.collapse(); LockHost.resume()/' $K/MainActivity.kt
@@ -25,6 +27,7 @@ grep -q 'p.reach' $K/SettingsActivity.kt
 grep -q 'navigationBarDividerColor' $K/MainActivity.kt
 grep -q 'card.hideView = icon' $K/MainActivity.kt
 grep -q 'LockSettingsActivity' $K/SettingsActivity.kt
+grep -q 'WallCustom(this' $K/SettingsActivity.kt
 grep -q '"lock" ->' $K/Glyphs.kt
 grep -q 'LockHost.attach' $K/MainActivity.kt
 grep -q 'LockHost.resume' $K/MainActivity.kt
