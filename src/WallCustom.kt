@@ -28,15 +28,91 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Размытие через сжатие и растяжение: level 1 = мягкое, 2 = сильное. */
+/** Один проход прямоугольного размытия по строкам и столбцам. */
+private fun boxPass(px: IntArray, w: Int, h: Int, r: Int) {
+    val tmp = IntArray(px.size)
+    val div = 2 * r + 1
+    for (y in 0 until h) {
+        val row = y * w
+        var sr = 0
+        var sg = 0
+        var sb = 0
+        for (i in -r..r) {
+            val p = px[row + i.coerceIn(0, w - 1)]
+            sr += (p shr 16) and 255
+            sg += (p shr 8) and 255
+            sb += p and 255
+        }
+        for (x in 0 until w) {
+            tmp[row + x] = (0xFF shl 24) or ((sr / div) shl 16) or ((sg / div) shl 8) or (sb / div)
+            val add = px[row + (x + r + 1).coerceAtMost(w - 1)]
+            val sub = px[row + (x - r).coerceAtLeast(0)]
+            sr += ((add shr 16) and 255) - ((sub shr 16) and 255)
+            sg += ((add shr 8) and 255) - ((sub shr 8) and 255)
+            sb += (add and 255) - (sub and 255)
+        }
+    }
+    for (x in 0 until w) {
+        var sr = 0
+        var sg = 0
+        var sb = 0
+        for (i in -r..r) {
+            val p = tmp[i.coerceIn(0, h - 1) * w + x]
+            sr += (p shr 16) and 255
+            sg += (p shr 8) and 255
+            sb += p and 255
+        }
+        for (y in 0 until h) {
+            px[y * w + x] = (0xFF shl 24) or ((sr / div) shl 16) or ((sg / div) shl 8) or (sb / div)
+            val add = tmp[(y + r + 1).coerceAtMost(h - 1) * w + x]
+            val sub = tmp[(y - r).coerceAtLeast(0) * w + x]
+            sr += ((add shr 16) and 255) - ((sub shr 16) and 255)
+            sg += ((add shr 8) and 255) - ((sub shr 8) and 255)
+            sb += (add and 255) - (sub and 255)
+        }
+    }
+}
+
+/**
+ * Настоящее размытие (три прохода прямоугольного размытия, получается почти по Гауссу), без пикселей.
+ * Считается на уменьшенной копии (до 480 px), потом плавно растягивается. level 1 = мягкое, 2 = сильное.
+ */
 fun blurBitmap(src: Bitmap, level: Int): Bitmap {
     if (level <= 0) return src
-    val div = if (level == 1) 10 else 26
-    val w = maxOf(8, src.width / div)
-    val h = maxOf(8, src.height / div)
-    var b = Bitmap.createScaledBitmap(src, w, h, true)
-    b = Bitmap.createScaledBitmap(b, w * 3, h * 3, true)
-    return Bitmap.createScaledBitmap(b, src.width, src.height, true)
+    val sc = minOf(1f, 480f / maxOf(src.width, src.height))
+    val tw = maxOf(8, (src.width * sc).toInt())
+    val th = maxOf(8, (src.height * sc).toInt())
+    val small = Bitmap.createScaledBitmap(src, tw, th, true)
+    val px = IntArray(tw * th)
+    small.getPixels(px, 0, tw, 0, 0, tw, th)
+    val r = if (level == 1) 4 else 10
+    boxPass(px, tw, th, r)
+    boxPass(px, tw, th, r)
+    boxPass(px, tw, th, r)
+    val out = Bitmap.createBitmap(tw, th, Bitmap.Config.ARGB_8888)
+    out.setPixels(px, 0, tw, 0, 0, tw, th)
+    return if (tw == src.width && th == src.height) out else Bitmap.createScaledBitmap(out, src.width, src.height, true)
+}
+
+fun saveFile(ctx: Context, b: Bitmap, name: String) {
+    try {
+        FileOutputStream(File(ctx.filesDir, name)).use { b.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+    } catch (e: Exception) {
+    }
+}
+
+/** Читает картинку с ограничением размера по высоте. */
+fun decodeUri(ctx: Context, uri: Uri, maxH: Int = 2400): Bitmap? = try {
+    val o = BitmapFactory.Options()
+    o.inJustDecodeBounds = true
+    ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, o) }
+    var s = 1
+    while (o.outHeight / s > maxH) s *= 2
+    val o2 = BitmapFactory.Options()
+    o2.inSampleSize = s
+    ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, o2) }
+} catch (e: Exception) {
+    null
 }
 
 /** Обрезка по центру до пропорций w:h и масштаб до w x h. */
@@ -185,6 +261,17 @@ class WallCustom(
     private var page = 0
 
     private fun dp(v: Int): Int = (v * d).toInt()
+
+    // чтение текущих обоев системой разрешено только при доступе к фото
+    private fun perm(): String =
+        if (android.os.Build.VERSION.SDK_INT >= 33) android.Manifest.permission.READ_MEDIA_IMAGES
+        else android.Manifest.permission.READ_EXTERNAL_STORAGE
+
+    private fun hasPerm(): Boolean = a.checkSelfPermission(perm()) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    fun onPermission() {
+        load()
+    }
 
     init {
         isClickable = true
@@ -435,8 +522,10 @@ class WallCustom(
             } catch (e: Exception) {
                 null
             }
-            home.orig = readFile("home_orig.jpg") ?: cur
-            lock.orig = readFile("lock_orig.jpg") ?: cur
+            val needPerm = cur == null && !hasPerm()
+            val curFile = readFile("home_cur.jpg")
+            home.orig = readFile("home_orig.jpg") ?: cur ?: curFile
+            lock.orig = readFile("lock_orig.jpg") ?: cur ?: curFile
             val apps = try {
                 queryApps(a)
             } catch (e: Exception) {
@@ -447,6 +536,7 @@ class WallCustom(
                 refreshPreview(1)
                 buildHome(apps)
                 updateBackdrop()
+                if (needPerm && home.orig == null) a.requestPermissions(arrayOf(perm()), WallScreen.REQ)
             }
         }.start()
     }
@@ -467,7 +557,7 @@ class WallCustom(
     private fun updateBackdrop() {
         val t = tgt()
         val src = t.orig ?: return
-        backdrop.setImageBitmap(blurBitmap(fitBitmap(src, 90, 195), 2))
+        backdrop.setImageBitmap(blurBitmap(fitBitmap(src, 180, 390), 1))
     }
 
     // превью рабочего стола: значки приложений сеткой и док
@@ -506,18 +596,7 @@ class WallCustom(
 
     private fun loadUri(uri: Uri) {
         Thread {
-            val bmp: Bitmap? = try {
-                val o = BitmapFactory.Options()
-                o.inJustDecodeBounds = true
-                a.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, o) }
-                var s = 1
-                while (o.outHeight / s > 2400) s *= 2
-                val o2 = BitmapFactory.Options()
-                o2.inSampleSize = s
-                a.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, o2) }
-            } catch (e: Exception) {
-                null
-            }
+            val bmp = decodeUri(a, uri)
             a.runOnUiThread {
                 if (bmp == null) {
                     Toast.makeText(a, L(a, "Не удалось открыть картинку", "Could not open the image"), Toast.LENGTH_SHORT).show()
@@ -548,7 +627,9 @@ class WallCustom(
                 val h = dm.heightPixels
                 if (hc && ho != null) {
                     saveJpg(ho, "home_orig.jpg")
-                    wm.setBitmap(blurBitmap(fitBitmap(ho, w, h), home.blur), null, true, WallpaperManager.FLAG_SYSTEM)
+                    val outH = blurBitmap(fitBitmap(ho, w, h), home.blur)
+                    saveFile(a, outH, "home_cur.jpg")
+                    wm.setBitmap(outH, null, true, WallpaperManager.FLAG_SYSTEM)
                 }
                 if (lc && lo != null) {
                     saveJpg(lo, "lock_orig.jpg")

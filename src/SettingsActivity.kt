@@ -39,6 +39,13 @@ class SettingsActivity : AppCompatActivity() {
     private val pick = registerForActivityResult(ActivityResultContracts.GetContent()) { u: Uri? ->
         if (u != null) {
             applyWallpaper(this, u)
+            Thread {
+                val b = decodeUri(this, u)
+                if (b != null) {
+                    saveFile(this, b, "home_orig.jpg")
+                    saveFile(this, b, "home_cur.jpg")
+                }
+            }.start()
             wall?.refresh()
         }
     }

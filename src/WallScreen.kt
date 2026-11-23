@@ -356,12 +356,17 @@ class WallScreen(private val a: SettingsActivity) : FrameLayout(a) {
     fun refresh() {
         val iv = currentImg ?: return
         Thread {
-            val dr = try {
+            var dr: android.graphics.drawable.Drawable? = try {
                 wm.drawable
             } catch (e: Exception) {
                 null
             }
-            a.runOnUiThread { if (dr != null) iv.setImageDrawable(dr) }
+            if (dr == null) {
+                val f = java.io.File(a.filesDir, "home_cur.jpg")
+                if (f.exists()) dr = android.graphics.drawable.BitmapDrawable(a.resources, android.graphics.BitmapFactory.decodeFile(f.absolutePath))
+            }
+            val res = dr
+            a.runOnUiThread { if (res != null) iv.setImageDrawable(res) }
         }.start()
     }
 
@@ -377,6 +382,8 @@ class WallScreen(private val a: SettingsActivity) : FrameLayout(a) {
             var ok = true
             try {
                 wm.setBitmap(bmp)
+                saveFile(a, bmp, "home_orig.jpg")
+                saveFile(a, bmp, "home_cur.jpg")
             } catch (e: Exception) {
                 ok = false
             }
@@ -393,6 +400,13 @@ class WallScreen(private val a: SettingsActivity) : FrameLayout(a) {
 
     private fun pickPhoto(uri: Uri) {
         applyWallpaper(a, uri)
+        Thread {
+            val b = decodeUri(a, uri)
+            if (b != null) {
+                saveFile(a, b, "home_orig.jpg")
+                saveFile(a, b, "home_cur.jpg")
+            }
+        }.start()
         closeSheet(true)
         postDelayed({ refresh() }, 600)
         pager.goTo(1)
@@ -581,6 +595,8 @@ class WallScreen(private val a: SettingsActivity) : FrameLayout(a) {
 
     fun onPermission() {
         fillGrid()
+        custom?.onPermission()
+        refresh()
     }
 
     private fun fillGrid() {
