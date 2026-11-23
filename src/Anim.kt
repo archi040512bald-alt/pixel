@@ -26,6 +26,7 @@ class WindowCard(c: Context) : View(c) {
     private var shown = false
     private var hyper = false
     private var pixel = false
+    private var magic = false
     private var pxClosing = false
     private var pu = 0f
     private var pP0 = 1f
@@ -47,13 +48,21 @@ class WindowCard(c: Context) : View(c) {
     private var ca0 = 0f
     private var is0 = 1f
 
+    private val mg = MagicEngine(this)
+
+    // MagicOS: прогресс карточки на каждом кадре (размытие фона делает Fx.magicFrame)
+    var onMagic: ((Float) -> Unit)? = null
+
     var hideView: View? = null
     var cornerDp = 40
     var speed = 340
     var curve = 0
     var land = false
 
-    init { visibility = INVISIBLE }
+    init {
+        visibility = INVISIBLE
+        mg.onProgress = { onMagic?.invoke(it) }
+    }
 
     private fun easeFor(): Interpolator {
         val base = curveOf(curve)
@@ -179,6 +188,22 @@ class WindowCard(c: Context) : View(c) {
         val p = Prefs(context)
         hyper = p.preset == 1
         pixel = p.preset == 2
+        magic = p.preset == MagicSpec.ID
+        if (magic) {
+            restore()
+            hidden = hideView
+            hideView = null
+            hidden?.alpha = 0f
+            from = rect
+            src = v
+            closing = false
+            shown = true
+            visibility = VISIBLE
+            val night = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+            mg.open(rect, v, if (night) MagicSpec.SURFACE_DARK else MagicSpec.SURFACE_LIGHT, half)
+            return
+        }
         reach = p.reach
         a0 = reach / 100f * 0.92f
         if (hyper) tint = hyperColor(v)
@@ -209,6 +234,13 @@ class WindowCard(c: Context) : View(c) {
         }
     }
 
+    private fun magicClose() {
+        mg.close {
+            visibility = INVISIBLE
+            restore()
+        }
+    }
+
     private fun hyperClose() {
         val tc = tm.coerceAtMost(HyperSpec.OPEN_END)
         p0 = HyperSpec.cardProgress(tc)
@@ -228,6 +260,10 @@ class WindowCard(c: Context) : View(c) {
     fun collapse() {
         if (!shown) return
         shown = false
+        if (magic) {
+            magicClose()
+            return
+        }
         if (pixel) {
             pixelClose()
             return
@@ -247,6 +283,10 @@ class WindowCard(c: Context) : View(c) {
     fun cancel() {
         if (!shown) return
         shown = false
+        if (magic) {
+            magicClose()
+            return
+        }
         if (pixel) {
             pixelClose()
             return
@@ -392,7 +432,7 @@ class WindowCard(c: Context) : View(c) {
     }
 
     override fun onDraw(cv: Canvas) {
-        if (pixel) drawPixel(cv) else if (hyper) drawHyper(cv) else drawStd(cv)
+        if (magic) mg.draw(cv) else if (pixel) drawPixel(cv) else if (hyper) drawHyper(cv) else drawStd(cv)
     }
 
     private fun drawStd(cv: Canvas) {
