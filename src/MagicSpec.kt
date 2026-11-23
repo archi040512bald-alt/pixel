@@ -53,8 +53,8 @@ object MagicSpec {
     const val BLUR_POWER = 1.6f       // сигма = BLUR_SIGMA_W * p^1.6
     const val HOME_DIM = 0.05f        // затемнение домашнего экрана при p = 1
 
-    const val SURFACE_LIGHT = 0xFFFFFFFF.toInt()
-    const val SURFACE_DARK = 0xFF1F1F1F.toInt()
+    val SURFACE_LIGHT: Int = 0xFFFFFFFF.toInt()
+    val SURFACE_DARK: Int = 0xFF1F1F1F.toInt()
 
     fun clamp01(x: Float) = x.coerceIn(0f, 1f)
 
