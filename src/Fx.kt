@@ -3,6 +3,11 @@ package com.example.pixellauncher
 import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -12,6 +17,9 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
 import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.Interpolator
 import android.view.animation.PathInterpolator
@@ -97,15 +105,84 @@ object Fx {
         va.start()
     }
 
-    // MagicOS: размытие, затемнение и зум фона ведёт MagicEngine (по прогрессу карточки, кадр за кадром)
-    fun magicFrame(a: Activity, p: Prefs, home: View, pr: Float) {
+    // MagicOS: размытая копия домашнего экрана считается один раз (1/8 размера, на CPU) при нажатии.
+    // Дальше за кадр меняется только прозрачность копии, поэтому анимация не нагружает GPU размытием.
+    private var mgOverlay: ImageView? = null
+    private var mgHome: View? = null
+    private var mgProg = 0f
+
+    fun magicBegin(a: Activity, p: Prefs, home: View) {
         if (!magic(p)) return
+        magicEnd()
+        mgHome = home
+        if (p.blur != 1) return
+        val par = home.parent as? ViewGroup ?: return
+        val w = home.width
+        val h = home.height
+        if (w <= 0 || h <= 0) return
+        try {
+            val d = MagicSpec.SNAP_DIV
+            val sw = maxOf(1, w / d)
+            val sh = maxOf(1, h / d)
+            val bmp = Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888)
+            val cv = Canvas(bmp)
+            cv.scale(sw / w.toFloat(), sh / h.toFloat())
+            home.draw(cv)
+            val sigmaPx = MagicSpec.BLUR_SIGMA_W * a.resources.displayMetrics.widthPixels * (p.blurR / MagicSpec.BLUR_REF_R)
+            val r = (sigmaPx / (w / sw.toFloat())).toInt().coerceAtLeast(1)
+            val blurred = MagicBlur.box(bmp, r)
+            bmp.recycle()
+            val iv = ImageView(a)
+            iv.setImageBitmap(blurred)
+            iv.scaleType = ImageView.ScaleType.FIT_XY
+            iv.alpha = 0f
+            iv.setColorFilter(PorterDuffColorFilter(Color.argb((MagicSpec.HOME_DIM * 255f).toInt(), 0, 0, 0), PorterDuff.Mode.SRC_ATOP))
+            val lp: ViewGroup.LayoutParams = if (par is FrameLayout) {
+                FrameLayout.LayoutParams(w, h).also { it.leftMargin = home.left; it.topMargin = home.top }
+            } else ViewGroup.LayoutParams(w, h)
+            par.addView(iv, par.indexOfChild(home) + 1, lp)
+            mgOverlay = iv
+        } catch (e: Exception) {
+            mgOverlay = null
+        }
+    }
+
+    private fun magicEnd() {
+        val ov = mgOverlay
+        if (ov != null) (ov.parent as? ViewGroup)?.removeView(ov)
+        mgOverlay = null
+        val h = mgHome
+        if (h != null) {
+            val s = 1f - 0.08f * mgProg
+            h.scaleX = s
+            h.scaleY = s
+            h.alpha = 1f - mgProg
+        }
+        mgHome = null
+    }
+
+    // pr: прогресс карточки 0..1, -1 = анимация закончилась. progress: прогресс выдвижной панели (как в Fx.back).
+    fun magicFrame(a: Activity, p: Prefs, home: View, progress: Float, pr: Float) {
+        if (!magic(p)) return
+        mgProg = progress
+        if (pr < 0f) {
+            magicEnd()
+            return
+        }
         val k = MagicSpec.clamp01(pr)
-        val z = 1f - p.zoom / 100f * k
+        val z = (1f - 0.08f * progress) * (1f - p.zoom / 100f * k)
         home.scaleX = z
         home.scaleY = z
-        home.alpha = 1f - MagicSpec.HOME_DIM * k
-        if (p.blur == 1) setBlur(a, home, p, MagicSpec.blurSigma(k, a.resources.displayMetrics.widthPixels.toFloat()))
+        val ov = mgOverlay
+        if (ov != null) {
+            val al = k.pow(MagicSpec.OVERLAY_POW)
+            ov.alpha = al
+            ov.scaleX = z
+            ov.scaleY = z
+            home.alpha = (1f - progress) * (1f - al)
+        } else {
+            home.alpha = (1f - progress) * (1f - MagicSpec.HOME_DIM * k)
+        }
     }
 
     fun out(a: Activity, p: Prefs, target: View, home: View) {
