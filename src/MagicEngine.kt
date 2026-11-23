@@ -36,8 +36,21 @@ class MagicEngine(private val host: View) {
     private var popSc = 1f
     private var surface = MagicSpec.SURFACE_LIGHT
 
-    /** Прогресс карточки на каждом кадре (для размытия и затемнения фона). */
+    private var popV = 0f
+
+    /** Длительность открытия в мс (ползунок "Длительность"); закрытие и выскок масштабируются так же. */
+    var speedMs = MagicSpec.OPEN_MS
+
+    /** Радиус углов полного окна в пикселях (ползунок "Радиус углов"); 0 = по замеру из видео. */
+    var cornerPx = 0f
+
+    /** Прогресс карточки на каждом кадре (для размытия и затемнения фона). -1 = анимация закончилась. */
     var onProgress: ((Float) -> Unit)? = null
+
+    /** Вызывается в начале открытия, до первого кадра (здесь делается снимок фона). */
+    var onStart: (() -> Unit)? = null
+
+    private fun k(): Float = (speedMs / MagicSpec.OPEN_MS).coerceIn(0.3f, 4f)
 
     private fun stop() {
         val old = anim
@@ -64,7 +77,12 @@ class MagicEngine(private val host: View) {
     }
 
     private fun report() {
-        onProgress?.invoke(if (ph == Ph.POP || ph == Ph.IDLE) 0f else p)
+        val v = when (ph) {
+            Ph.IDLE -> -1f
+            Ph.POP -> MagicSpec.HANDOFF_P * (1f - popV)
+            else -> p
+        }
+        onProgress?.invoke(v)
     }
 
     fun open(rect: RectF, icon: View?, surfaceColor: Int, half: (() -> Unit)?) {
@@ -80,7 +98,8 @@ class MagicEngine(private val host: View) {
         sc0 = s0
         val u0 = MagicSpec.openU(p0)
         var fired = false
-        start(MagicSpec.OPEN_MS * (1f - u0), { f ->
+        onStart?.invoke()
+        start(MagicSpec.OPEN_MS * k() * (1f - u0), { f ->
             val u = u0 + (1f - u0) * f
             p = MagicSpec.openP(u)
             sc0 = s0 + (MagicSpec.START_SCALE - s0) * f
@@ -107,7 +126,7 @@ class MagicEngine(private val host: View) {
         val p0 = p
         val s0 = sc0
         ph = Ph.CLOSE
-        val ms = MagicSpec.CLOSE_MS * (MagicSpec.CLOSE_MIN_K + (1f - MagicSpec.CLOSE_MIN_K) * p0)
+        val ms = MagicSpec.CLOSE_MS * k() * (MagicSpec.CLOSE_MIN_K + (1f - MagicSpec.CLOSE_MIN_K) * p0)
         var handed = false
         start(ms, { f ->
             p = p0 * MagicSpec.closeK(f)
@@ -131,9 +150,12 @@ class MagicEngine(private val host: View) {
         ph = Ph.POP
         p = 0f
         popSc = MagicSpec.POP_FROM
+        popV = 0f
         report()
-        start(MagicSpec.POP_MS, { f ->
+        start(MagicSpec.POP_MS * k(), { f ->
             popSc = MagicSpec.popScale(f)
+            popV = f
+            report()
         }, {
             ph = Ph.IDLE
             popSc = 1f
@@ -148,6 +170,7 @@ class MagicEngine(private val host: View) {
         ph = Ph.IDLE
         p = 0f
         popSc = 1f
+        popV = 0f
         report()
     }
 
@@ -185,7 +208,8 @@ class MagicEngine(private val host: View) {
         val t = (icy - hh) * (1f - p)
         val r = (icx + hw) + (w - (icx + hw)) * p
         val b = (icy + hh) + (h - (icy + hh)) * p
-        val rad = max(0f, min(MagicSpec.RADIUS_MAX_W * w, MagicSpec.RADIUS_K * min(r - l, b - t)))
+        val maxRad = if (cornerPx > 0f) cornerPx else MagicSpec.RADIUS_MAX_W * w
+        val rad = max(0f, min(maxRad, MagicSpec.RADIUS_K * min(r - l, b - t)))
         paint.color = surface
         paint.alpha = 255
         box.set(l, t, r, b)
