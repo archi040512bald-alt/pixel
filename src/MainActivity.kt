@@ -209,7 +209,8 @@ class MainActivity : HomeBase() {
         edit.badges.onChange = { edit.updateRemove(edit.badges.picked.size, prefs.drawer == 1) }
 
         card = WindowCard(this)
-        card.onMagic = { pr -> Fx.magicFrame(this, prefs, home, pr) }
+        card.onMagicStart = { Fx.magicBegin(this, prefs, home) }
+        card.onMagic = { pr -> Fx.magicFrame(this, prefs, home, progress, pr) }
         root.addView(card, FrameLayout.LayoutParams(-1, -1))
         menu = AppMenu(this, root)
         menu.targets = listOf(home, drawer)
