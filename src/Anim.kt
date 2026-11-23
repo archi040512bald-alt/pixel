@@ -52,6 +52,7 @@ class WindowCard(c: Context) : View(c) {
 
     // MagicOS: прогресс карточки на каждом кадре (размытие фона делает Fx.magicFrame)
     var onMagic: ((Float) -> Unit)? = null
+    var onMagicStart: (() -> Unit)? = null
 
     var hideView: View? = null
     var cornerDp = 40
@@ -62,6 +63,7 @@ class WindowCard(c: Context) : View(c) {
     init {
         visibility = INVISIBLE
         mg.onProgress = { onMagic?.invoke(it) }
+        mg.onStart = { onMagicStart?.invoke() }
     }
 
     private fun easeFor(): Interpolator {
@@ -201,6 +203,8 @@ class WindowCard(c: Context) : View(c) {
             visibility = VISIBLE
             val night = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
+            mg.speedMs = speed.toFloat()
+            mg.cornerPx = cornerDp * density
             mg.open(rect, v, if (night) MagicSpec.SURFACE_DARK else MagicSpec.SURFACE_LIGHT, half)
             return
         }
