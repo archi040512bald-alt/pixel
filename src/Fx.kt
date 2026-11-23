@@ -28,6 +28,7 @@ fun presetName(c: Context, i: Int): String = when (i) {
     1 -> "HyperOS  NEW"
     2 -> "Pixel  NEW"
     3 -> "iOS  Soon"
+    4 -> "MagicOS  NEW"
     else -> L(c, "Стандарт", "Standard")
 }
 
@@ -61,6 +62,7 @@ object Fx {
 
     private fun hyper(p: Prefs): Boolean = p.preset == 1
     private fun pixel(p: Prefs): Boolean = p.preset == 2
+    private fun magic(p: Prefs): Boolean = p.preset == MagicSpec.ID
 
     private fun setBlur(a: Activity, v: View, p: Prefs, r: Float) {
         if (Build.VERSION.SDK_INT < 31) return
@@ -68,7 +70,7 @@ object Fx {
         val q = (r * 2f).toInt() / 2f
         if (q == lastQ) return
         lastQ = q
-        if (!hyper(p) && !pixel(p) && a.windowManager.isCrossWindowBlurEnabled) {
+        if (!hyper(p) && !pixel(p) && !magic(p) && a.windowManager.isCrossWindowBlurEnabled) {
             a.window.setBackgroundBlurRadius(r.toInt())
         } else {
             v.setRenderEffect(if (r < 1f) null else RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP))
@@ -95,7 +97,19 @@ object Fx {
         va.start()
     }
 
+    // MagicOS: размытие, затемнение и зум фона ведёт MagicEngine (по прогрессу карточки, кадр за кадром)
+    fun magicFrame(a: Activity, p: Prefs, home: View, pr: Float) {
+        if (!magic(p)) return
+        val k = MagicSpec.clamp01(pr)
+        val z = 1f - p.zoom / 100f * k
+        home.scaleX = z
+        home.scaleY = z
+        home.alpha = 1f - MagicSpec.HOME_DIM * k
+        if (p.blur == 1) setBlur(a, home, p, MagicSpec.blurSigma(k, a.resources.displayMetrics.widthPixels.toFloat()))
+    }
+
     fun out(a: Activity, p: Prefs, target: View, home: View) {
+        if (magic(p)) return
         if (pixel(p)) {
             // Pixel: домашний экран размывается и темнеет, пока окно открыто (зум по настройке "Зум", по умолчанию 0)
             val z = 1f - p.zoom / 100f
@@ -122,6 +136,7 @@ object Fx {
     }
 
     fun back(a: Activity, p: Prefs, home: View, drawer: View, progress: Float) {
+        if (magic(p)) return
         if (pixel(p)) {
             // Pixel: после закрытия окна (около 120 мс) фон за 130 мс становится резким
             val ip2 = DecelerateInterpolator(1.5f)
