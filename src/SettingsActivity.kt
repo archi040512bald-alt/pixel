@@ -344,8 +344,13 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun anim() {
         head(l("Пресет", "Preset"))
-        radios(listOf(presetName(this, 0), presetName(this, 1), presetName(this, 2), presetName(this, 3)), p.preset) {
+        radios(listOf(presetName(this, 0), presetName(this, 1), presetName(this, 2), presetName(this, 3), presetName(this, 4)), p.preset) {
             p.applyPreset(it)
+            if (it == MagicSpec.ID) {
+                p.preset = it
+                p.blur = 1
+                p.zoom = 0
+            }
             recreate()
         }
         head(l("Эффекты", "Effects"))
