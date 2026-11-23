@@ -47,6 +47,18 @@ class SettingsActivity : AppCompatActivity() {
         pick.launch("image/*")
     }
 
+    private var customCb: ((Uri) -> Unit)? = null
+    private val pickCustom = registerForActivityResult(ActivityResultContracts.GetContent()) { u: Uri? ->
+        val cb = customCb
+        customCb = null
+        if (u != null && cb != null) cb(u)
+    }
+
+    fun pickForCustom(cb: (Uri) -> Unit) {
+        customCb = cb
+        pickCustom.launch("image/*")
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == WallScreen.REQ) wall?.onPermission()

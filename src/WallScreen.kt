@@ -132,6 +132,7 @@ class WallScreen(private val a: SettingsActivity) : FrameLayout(a) {
     private var fab: View? = null
     private var sheet: View? = null
     private var gridHost: LinearLayout? = null
+    private var custom: WallCustom? = null
     private var inT = 0
     private var inB = 0
 
@@ -346,7 +347,7 @@ class WallScreen(private val a: SettingsActivity) : FrameLayout(a) {
     private fun action(i: Int) {
         when (i) {
             0 -> showSheet()
-            1 -> a.startActivity(Intent(a, SettingsActivity::class.java).putExtra("s", "desk"))
+            1 -> customize()
             else -> applyPreset(i - 2)
         }
     }
@@ -552,7 +553,25 @@ class WallScreen(private val a: SettingsActivity) : FrameLayout(a) {
         }
     }
 
+    private fun customize() {
+        if (custom != null) return
+        val v = WallCustom(a, inT, inB) { applied ->
+            val c = custom
+            custom = null
+            if (c != null) removeView(c)
+            if (applied) refresh()
+        }
+        addView(v, LayoutParams(-1, -1))
+        custom = v
+    }
+
     fun onBack(): Boolean {
+        val c = custom
+        if (c != null) {
+            custom = null
+            removeView(c)
+            return true
+        }
         if (sheet != null) {
             closeSheet(true)
             return true

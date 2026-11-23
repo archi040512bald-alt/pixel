@@ -6,7 +6,12 @@ import android.app.AlarmManager
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -22,6 +27,7 @@ import android.view.ViewConfiguration
 import android.view.WindowInsets
 import android.widget.FrameLayout
 import android.widget.ImageView
+import java.io.File
 import android.widget.LinearLayout
 import android.widget.TextClock
 import android.widget.TextView
@@ -34,6 +40,23 @@ class LockView(private val a: Activity, private val unlock: (PendingIntent?) -> 
     private val alarm = TextView(a)
     private val clock = TextClock(a)
     private val finger = FingerprintView(a)
+    private val bgImg = ImageView(a)
+    private var sensors: SensorManager? = null
+    private var tx = 0f
+    private var ty = 0f
+    private val tilt = object : SensorEventListener {
+        override fun onSensorChanged(e: SensorEvent) {
+            val dd = a.resources.displayMetrics.density
+            val gx = (-e.values[0] / 9.8f).coerceIn(-1f, 1f) * 14f * dd
+            val gy = (e.values[1] / 9.8f).coerceIn(-1f, 1f) * 14f * dd
+            tx += (gx - tx) * 0.12f
+            ty += (gy - ty) * 0.12f
+            bgImg.translationX = tx
+            bgImg.translationY = ty
+        }
+
+        override fun onAccuracyChanged(s: Sensor?, acc: Int) {}
+    }
     private var panel: AuthPanel? = null
     private var after: PendingIntent? = null
     private var inB = 0
@@ -49,7 +72,12 @@ class LockView(private val a: Activity, private val unlock: (PendingIntent?) -> 
 
     init {
         isClickable = true
-        background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x22000000, 0x77000000))
+        // свои обои экрана блокировки (если выбраны в "Настроить обои") лежат под затемнением
+        bgImg.scaleType = ImageView.ScaleType.CENTER_CROP
+        addView(bgImg, FrameLayout.LayoutParams(-1, -1))
+        val scrim = View(a)
+        scrim.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x22000000, 0x77000000))
+        addView(scrim, FrameLayout.LayoutParams(-1, -1))
         content.orientation = LinearLayout.VERTICAL
 
         clock.format12Hour = "h:mm"
@@ -124,8 +152,43 @@ class LockView(private val a: Activity, private val unlock: (PendingIntent?) -> 
         return super.onApplyWindowInsets(i)
     }
 
+    private fun loadBg() {
+        val f = File(a.filesDir, "lock_wall.jpg")
+        if (f.exists()) {
+            try {
+                bgImg.setImageBitmap(BitmapFactory.decodeFile(f.absolutePath))
+            } catch (e: Throwable) {
+                bgImg.setImageDrawable(null)
+            }
+        } else {
+            bgImg.setImageDrawable(null)
+        }
+        val three = Prefs(a).lock3d == 1 && bgImg.drawable != null
+        bgImg.scaleX = if (three) 1.12f else 1f
+        bgImg.scaleY = if (three) 1.12f else 1f
+        bgImg.translationX = 0f
+        bgImg.translationY = 0f
+    }
+
+    // 3D-эффект: фон чуть сдвигается при наклоне телефона
+    private fun startTilt() {
+        stopTilt()
+        if (Prefs(a).lock3d != 1 || bgImg.drawable == null) return
+        val m = a.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val s = m.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return
+        m.registerListener(tilt, s, SensorManager.SENSOR_DELAY_GAME)
+        sensors = m
+    }
+
+    private fun stopTilt() {
+        sensors?.unregisterListener(tilt)
+        sensors = null
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        loadBg()
+        startTilt()
         requestApplyInsets()
         // цвет часов берётся из обоев, поэтому обновляем при каждом показе экрана
         clock.setTextColor(LockTheme.accent(a))
@@ -134,6 +197,7 @@ class LockView(private val a: Activity, private val unlock: (PendingIntent?) -> 
     }
 
     override fun onDetachedFromWindow() {
+        stopTilt()
         NotifService.onChange = null
         super.onDetachedFromWindow()
     }
