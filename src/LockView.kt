@@ -39,6 +39,10 @@ class LockView(private val a: Activity, private val unlock: (PendingIntent?) -> 
     private val cards = LinearLayout(a)
     private val alarm = TextView(a)
     private val clock = TextClock(a)
+    private val clockM = TextClock(a)
+    private val statusTxt = TextView(a)
+    private val lockBtn = FrameLayout(a)
+    private val hint = TextView(a)
     private val finger = FingerprintView(a)
     private val bgImg = ImageView(a)
     private var sensors: SensorManager? = null
@@ -80,39 +84,82 @@ class LockView(private val a: Activity, private val unlock: (PendingIntent?) -> 
         addView(scrim, FrameLayout.LayoutParams(-1, -1))
         content.orientation = LinearLayout.VERTICAL
 
-        clock.format12Hour = "h:mm"
-        clock.format24Hour = "HH:mm"
-        clock.setTextColor(LockTheme.accent(a))
-        clock.textSize = 84f
-        clock.typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
-        clock.setShadowLayer(10f, 0f, 3f, 0x55000000)
-        clock.includeFontPadding = false
+        // Часы в стиле Pixel: часы и минуты в два ряда по центру, под ними дата
+        val face = Typeface.create("sans-serif", Typeface.NORMAL)
+        clock.format12Hour = "h"
+        clock.format24Hour = "HH"
+        clockM.format12Hour = "mm"
+        clockM.format24Hour = "mm"
+        for (c in listOf(clock, clockM)) {
+            c.textSize = 118f
+            c.typeface = face
+            c.includeFontPadding = false
+            c.gravity = Gravity.CENTER
+            c.setShadowLayer(10f, 0f, 3f, 0x44000000)
+        }
+        tint()
         val date = TextClock(a)
         date.format12Hour = "EEE, d MMM"
         date.format24Hour = "EEE, d MMM"
         date.setTextColor(Color.WHITE)
-        date.textSize = 17f
+        date.textSize = 16f
+        date.typeface = Typeface.DEFAULT_BOLD
+        date.gravity = Gravity.CENTER
         alarm.setTextColor(Color.WHITE)
-        alarm.textSize = 16f
+        alarm.textSize = 14f
+        alarm.gravity = Gravity.CENTER
+        statusTxt.setTextColor(Color.WHITE)
+        statusTxt.textSize = 13f
+        statusTxt.setPadding(a.dp(28), a.dp(10), a.dp(28), 0)
+        content.addView(statusTxt, LinearLayout.LayoutParams(-1, -2))
         val head = LinearLayout(a)
         head.orientation = LinearLayout.VERTICAL
-        head.setPadding(a.dp(28), a.dp(40), a.dp(28), 0)
-        head.addView(clock)
-        head.addView(date)
-        head.addView(alarm)
+        head.gravity = Gravity.CENTER_HORIZONTAL
+        head.setPadding(a.dp(28), a.dp(36), a.dp(28), 0)
+        head.addView(clock, LinearLayout.LayoutParams(-2, -2))
+        val ml = LinearLayout.LayoutParams(-2, -2)
+        ml.topMargin = a.dp(-22)
+        head.addView(clockM, ml)
+        val dl = LinearLayout.LayoutParams(-2, -2)
+        dl.topMargin = a.dp(6)
+        head.addView(date, dl)
+        head.addView(alarm, LinearLayout.LayoutParams(-2, -2))
         content.addView(head, LinearLayout.LayoutParams(-1, -2))
-        content.addView(View(a), LinearLayout.LayoutParams(-1, 0, 1f))
         cards.orientation = LinearLayout.VERTICAL
         val cl = LinearLayout.LayoutParams(-1, -2)
-        cl.setMargins(a.dp(16), 0, a.dp(16), a.dp(12))
+        cl.setMargins(a.dp(16), a.dp(18), a.dp(16), a.dp(12))
         content.addView(cards, cl)
+        content.addView(View(a), LinearLayout.LayoutParams(-1, 0, 1f))
+        // кнопка замка по центру внизу (вместо неё значок отпечатка, если он включён)
+        val lg = GradientDrawable()
+        lg.shape = GradientDrawable.OVAL
+        lg.setColor(0xB0101114.toInt())
+        lockBtn.background = lg
+        lockBtn.addView(GlyphView(a, "lock", Color.WHITE), FrameLayout.LayoutParams(a.dp(26), a.dp(26), Gravity.CENTER))
+        lockBtn.setOnClickListener { begin() }
+        val bl = LinearLayout.LayoutParams(a.dp(60), a.dp(60))
+        bl.gravity = Gravity.CENTER_HORIZONTAL
+        bl.bottomMargin = a.dp(14)
+        content.addView(lockBtn, bl)
         val fl = LinearLayout.LayoutParams(a.dp(64), a.dp(64))
         fl.gravity = Gravity.CENTER_HORIZONTAL
-        fl.bottomMargin = a.dp(28)
+        fl.bottomMargin = a.dp(14)
         content.addView(finger, fl)
+        hint.text = L(a, "Разблокируйте для доступа ко всем функциям и данным", "Unlock for all features and data")
+        hint.setTextColor(0xD9FFFFFF.toInt())
+        hint.textSize = 13f
+        hint.gravity = Gravity.CENTER
+        hint.setPadding(a.dp(32), 0, a.dp(32), a.dp(26))
+        content.addView(hint, LinearLayout.LayoutParams(-1, -2))
         addView(content, FrameLayout.LayoutParams(-1, -1))
         finger.setOnTouchListener { _, e -> hold(e) }
         refresh()
+    }
+
+    private fun tint() {
+        val c = LockTheme.accent(a)
+        clock.setTextColor(c)
+        clockM.setTextColor(c)
     }
 
     private fun hold(e: MotionEvent): Boolean {
@@ -191,7 +238,7 @@ class LockView(private val a: Activity, private val unlock: (PendingIntent?) -> 
         startTilt()
         requestApplyInsets()
         // цвет часов берётся из обоев, поэтому обновляем при каждом показе экрана
-        clock.setTextColor(LockTheme.accent(a))
+        tint()
         NotifService.onChange = { post { refresh() } }
         refresh()
     }
@@ -212,6 +259,15 @@ class LockView(private val a: Activity, private val unlock: (PendingIntent?) -> 
             alarm.text = "⏰ " + DateFormat.getTimeFormat(a).format(Date(info.triggerTime))
         }
         finger.visibility = if (sp.fp) View.VISIBLE else View.GONE
+        lockBtn.visibility = if (sp.fp) View.GONE else View.VISIBLE
+        val tm = a.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+        val noSim = try {
+            tm != null && tm.simState == android.telephony.TelephonyManager.SIM_STATE_ABSENT
+        } catch (e: Exception) {
+            false
+        }
+        statusTxt.visibility = if (noSim) View.VISIBLE else View.GONE
+        statusTxt.text = L(a, "Нет SIM-карты — только экстренные вызовы", "No SIM — Emergency calls only")
         cards.removeAllViews()
         if (!sp.notif) return
         val list = NotifService.list()
