@@ -350,6 +350,9 @@ class SettingsActivity : AppCompatActivity() {
                 p.preset = it
                 p.blur = 1
                 p.zoom = 0
+                p.speed = MagicSpec.OPEN_MS.toInt()
+                p.radius = 30
+                p.blurR = MagicSpec.BLUR_REF_R.toInt()
             }
             recreate()
         }
