@@ -52,6 +52,9 @@ object MagicSpec {
     const val BLUR_SIGMA_W = 0.05f    // сигма размытия при p = 1 (доли W)
     const val BLUR_POWER = 1.6f       // сигма = BLUR_SIGMA_W * p^1.6
     const val HOME_DIM = 0.05f        // затемнение домашнего экрана при p = 1
+    const val BLUR_REF_R = 10f        // значение ползунка "Сила размытия", при котором сигма = BLUR_SIGMA_W
+    const val SNAP_DIV = 8            // размытая копия домашнего экрана считается в 1/8 размера
+    const val OVERLAY_POW = 0.9f      // непрозрачность размытой копии = p^0.9 (плавный переход резкий -> размытый)
 
     val SURFACE_LIGHT: Int = 0xFFFFFFFF.toInt()
     val SURFACE_DARK: Int = 0xFF1F1F1F.toInt()
