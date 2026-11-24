@@ -2,9 +2,12 @@ package com.example.pixellauncher
 
 import android.animation.ValueAnimator
 import android.appwidget.AppWidgetProviderInfo
+import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
+import android.content.ContextWrapper
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -715,16 +718,68 @@ class Desk(c: Context, private val prefs: Prefs,
         slp.topMargin = (sh * 0.045f).toInt()
         box.addView(sv, slp)
 
-        // ---- фон: размытие того, что за окном, и затемнение ----
-        val blurMax = if (Build.VERSION.SDK_INT >= 31 &&
-            (ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager).isCrossWindowBlurEnabled) ctx.dp(48) else 0
-        val dimMax = if (blurMax > 0) 0.30f else 0.72f
+        // ---- окно на весь экран, системные панели как у лаунчера (прозрачные, без чёрной полосы и белой панели) ----
+        var act: Activity? = null
+        var cc: Context? = ctx
+        while (cc is ContextWrapper) {
+            if (cc is Activity) {
+                act = cc
+                break
+            }
+            cc = cc.baseContext
+        }
         win?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        win?.setLayout(-1, -1)
         win?.setWindowAnimations(0)
-        win?.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        if (blurMax > 0 && Build.VERSION.SDK_INT >= 31) win?.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+        win?.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS or
+            WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        win?.setLayout(-1, -1)
+        win?.statusBarColor = Color.TRANSPARENT
+        win?.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= 29) {
+            win?.isNavigationBarContrastEnforced = false
+            win?.isStatusBarContrastEnforced = false
+        }
+        if (Build.VERSION.SDK_INT >= 30) win?.setDecorFitsSystemWindows(false)
+        val ui = act?.window?.decorView?.systemUiVisibility ?: 0
+        @Suppress("DEPRECATION")
+        win?.decorView?.systemUiVisibility = ui or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
         win?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+
+        // ---- размытие: размытая копия экрана лаунчера, сам экран на время папки прячется ----
+        val dimMax = 0.30f
+        val content = act?.findViewById<View>(android.R.id.content)
+        var blurIv: ImageView? = null
+        if (content != null && content.width > 0 && content.height > 0) {
+            try {
+                val dv = MagicSpec.SNAP_DIV
+                val bw = maxOf(1, content.width / dv)
+                val bh = maxOf(1, content.height / dv)
+                val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+                val cv = Canvas(bmp)
+                cv.scale(bw / content.width.toFloat(), bh / content.height.toFloat())
+                content.draw(cv)
+                val sigma = MagicSpec.BLUR_SIGMA_W * sw * (prefs.blurR / MagicSpec.BLUR_REF_R)
+                val br = (sigma / (content.width / bw.toFloat())).toInt().coerceAtLeast(2)
+                val blurred = MagicBlur.box(bmp, br)
+                bmp.recycle()
+                val iv = ImageView(ctx)
+                iv.setImageBitmap(blurred)
+                iv.scaleType = ImageView.ScaleType.FIT_XY
+                iv.alpha = 0f
+                val loc = IntArray(2)
+                content.getLocationOnScreen(loc)
+                val ilp = FrameLayout.LayoutParams(content.width, content.height)
+                ilp.leftMargin = loc[0]
+                ilp.topMargin = loc[1]
+                root.addView(iv, 0, ilp)
+                blurIv = iv
+            } catch (e: Exception) {
+                blurIv = null
+            }
+        }
 
         var cur = 0f
         fun applyAnim(f: Float) {
@@ -733,10 +788,11 @@ class Desk(c: Context, private val prefs: Prefs,
             box.alpha = c
             box.scaleX = 0.3f + 0.7f * f
             box.scaleY = 0.3f + 0.7f * f
+            blurIv?.alpha = c
+            if (blurIv != null) content?.alpha = 1f - c
             val w = win ?: return
             val at = w.attributes
             at.dimAmount = dimMax * c
-            if (Build.VERSION.SDK_INT >= 31) at.blurBehindRadius = (blurMax * c).toInt()
             w.attributes = at
         }
 
@@ -815,6 +871,7 @@ class Desk(c: Context, private val prefs: Prefs,
             } else false
         }
         dlg.setOnDismissListener {
+            content?.alpha = 1f
             (ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(et.windowToken, 0)
             val n = et.text.toString().trim()
             val nn = if (n.isEmpty()) L(ctx, "Папка", "Folder") else n
