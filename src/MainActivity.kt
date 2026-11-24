@@ -415,6 +415,7 @@ class MainActivity : HomeBase() {
 
     private fun enterEdit() {
         editing = true
+        desk.editing = true
         menu.hide()
         edit.badges.picked.clear()
         edit.updateRemove(0, false)
@@ -425,6 +426,7 @@ class MainActivity : HomeBase() {
     private fun exitEdit() {
         if (!editing) return
         editing = false
+        desk.editing = false
         edit.hide()
         edit.badges.picked.clear()
         for (v in listOf(col.getChildAt(0), dots, dock, search)) v.animate().alpha(1f).setDuration(220).start()
