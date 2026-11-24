@@ -3,24 +3,35 @@ package com.example.pixellauncher
 import android.animation.ValueAnimator
 import android.appwidget.AppWidgetProviderInfo
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Build
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.EditText
+import android.widget.CheckBox
+import android.widget.ImageView
+import android.widget.ScrollView
+import android.widget.TextView
 import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.LinearLayout
@@ -642,60 +653,281 @@ class Desk(c: Context, private val prefs: Prefs,
         super.dispatchDraw(cv)
     }
 
+    private fun folderOrigin(item: DeskItem, fallback: View): View {
+        for (i in 0 until childCount) {
+            val v = getChildAt(i)
+            if (v.tag === item) return (v as? ViewGroup)?.getChildAt(0) ?: fallback
+        }
+        return fallback
+    }
+
+    // Открытая папка: без панели, на размытом фоне. Заголовок по центру (по нажатию редактируется),
+    // сетка 3 в ряд с подписями и плитка "Добавить" в конце.
     private fun showFolder(item: DeskItem, origin: View) {
-        val box = LinearLayout(context)
+        val ctx = context
+        val dm = ctx.resources.displayMetrics
+        val sw = dm.widthPixels
+        val sh = dm.heightPixels
+        val dlg = Dialog(ctx, android.R.style.Theme_Translucent_NoTitleBar)
+        val win = dlg.window
+        val root = FrameLayout(ctx)
+        root.isFocusableInTouchMode = true
+        val box = LinearLayout(ctx)
         box.orientation = LinearLayout.VERTICAL
-        box.setPadding(context.dp(16), context.dp(12), context.dp(16), context.dp(8))
-        val bg = GradientDrawable()
-        bg.setColor(0xF0202124.toInt())
-        bg.cornerRadius = context.dp(28).toFloat()
-        box.background = bg
-        val et = EditText(context)
+        box.gravity = Gravity.CENTER_HORIZONTAL
+        root.addView(box, FrameLayout.LayoutParams(-1, -1))
+
+        val et = EditText(ctx)
+        et.background = null
         et.setText(item.name)
         et.setSingleLine()
         et.setTextColor(Color.WHITE)
+        et.setHintTextColor(0x88FFFFFF.toInt())
+        et.hint = L(ctx, "Папка", "Folder")
         et.gravity = Gravity.CENTER
-        et.textSize = 18f
-        box.addView(et)
-        val g = GridLayout(context)
-        g.columnCount = 4
-        box.addView(g)
-        val dlg = AlertDialog.Builder(context).setView(box).create()
-        dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        dlg.window?.setWindowAnimations(0)
-        for (k in item.keys.toList()) {
-            val a = find(k) ?: continue
-            val cell = makeCell(context, a, true, { x, _ -> dlg.dismiss(); takeOut(item, x) }) { x, _ ->
-                dlg.dismiss()
-                onOpen(x, origin)
-            }
+        et.textSize = 30f
+        et.typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+        et.setPadding(0, 0, 0, 0)
+        et.minWidth = ctx.dp(140)
+        et.maxWidth = (sw * 0.8f).toInt()
+        et.imeOptions = EditorInfo.IME_ACTION_DONE
+        et.setOnEditorActionListener { v, id, _ ->
+            if (id == EditorInfo.IME_ACTION_DONE) {
+                v.clearFocus()
+                root.requestFocus()
+                (ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(v.windowToken, 0)
+                true
+            } else false
+        }
+        val tlp = LinearLayout.LayoutParams(-2, -2)
+        tlp.topMargin = (sh * 0.14f).toInt()
+        box.addView(et, tlp)
+
+        val g = GridLayout(ctx)
+        g.columnCount = 3
+        val sv = ScrollView(ctx)
+        sv.isVerticalScrollBarEnabled = false
+        sv.overScrollMode = View.OVER_SCROLL_NEVER
+        sv.clipToPadding = false
+        sv.setPadding(0, 0, 0, ctx.dp(56))
+        sv.addView(g, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL))
+        val slp = LinearLayout.LayoutParams(-1, 0, 1f)
+        slp.topMargin = (sh * 0.045f).toInt()
+        box.addView(sv, slp)
+
+        // ---- фон: размытие того, что за окном, и затемнение ----
+        val blurMax = if (Build.VERSION.SDK_INT >= 31 &&
+            (ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager).isCrossWindowBlurEnabled) ctx.dp(48) else 0
+        val dimMax = if (blurMax > 0) 0.30f else 0.72f
+        win?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        win?.setLayout(-1, -1)
+        win?.setWindowAnimations(0)
+        win?.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        if (blurMax > 0 && Build.VERSION.SDK_INT >= 31) win?.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+        win?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+
+        var cur = 0f
+        fun applyAnim(f: Float) {
+            cur = f
+            val c = f.coerceIn(0f, 1f)
+            box.alpha = c
+            box.scaleX = 0.3f + 0.7f * f
+            box.scaleY = 0.3f + 0.7f * f
+            val w = win ?: return
+            val at = w.attributes
+            at.dimAmount = dimMax * c
+            if (Build.VERSION.SDK_INT >= 31) at.blurBehindRadius = (blurMax * c).toInt()
+            w.attributes = at
+        }
+
+        var closing = false
+        fun close() {
+            if (closing) return
+            closing = true
+            val va = ValueAnimator.ofFloat(cur, 0f)
+            va.duration = 200
+            va.interpolator = DecelerateInterpolator()
+            va.addUpdateListener { applyAnim(it.animatedValue as Float) }
+            va.addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(a: android.animation.Animator) {
+                    dlg.dismiss()
+                }
+            })
+            va.start()
+        }
+
+        // ---- сетка ----
+        val sz = ctx.dp(64)
+        val pitch = (sw * 0.235f).toInt()
+        fun cellLp(): GridLayout.LayoutParams {
             val lp = GridLayout.LayoutParams()
-            lp.width = context.dp(72)
-            g.addView(cell, lp)
+            lp.width = pitch
+            lp.bottomMargin = ctx.dp(18)
+            return lp
+        }
+        fun tileLabel(ll: LinearLayout, text: String) {
+            if (prefs.labels != 1) return
+            val lb = labelView(ctx, text)
+            lb.textSize = 14f
+            val lp = LinearLayout.LayoutParams(-1, -2)
+            lp.topMargin = ctx.dp(6)
+            ll.addView(lb, lp)
+        }
+        lateinit var fill: () -> Unit
+        fill = {
+            g.removeAllViews()
+            for (k in item.keys.toList()) {
+                val a = find(k) ?: continue
+                val ll = LinearLayout(ctx)
+                ll.orientation = LinearLayout.VERTICAL
+                ll.gravity = Gravity.CENTER
+                val icon = ShapedIcon(ctx, a.icon, prefs.shape, a.pkg, prefs.badges == 1)
+                ll.addView(icon, LinearLayout.LayoutParams(sz, sz))
+                tileLabel(ll, a.label)
+                ll.setOnClickListener {
+                    dlg.dismiss()
+                    onOpen(a, folderOrigin(item, origin))
+                }
+                ll.setOnLongClickListener {
+                    dlg.dismiss()
+                    takeOut(item, a)
+                    true
+                }
+                g.addView(ll, cellLp())
+            }
+            val add = LinearLayout(ctx)
+            add.orientation = LinearLayout.VERTICAL
+            add.gravity = Gravity.CENTER
+            add.addView(PlusTile(ctx, sz), LinearLayout.LayoutParams(sz, sz))
+            tileLabel(add, L(ctx, "Добавить", "Add"))
+            add.setOnClickListener { pickApps(item) { fill() } }
+            g.addView(add, cellLp())
+        }
+        fill()
+
+        root.setOnClickListener { close() }
+        sv.setOnClickListener { close() }
+        dlg.setContentView(root)
+        dlg.setOnKeyListener { _, code, ev ->
+            if (code == KeyEvent.KEYCODE_BACK) {
+                if (ev.action == KeyEvent.ACTION_UP) close()
+                true
+            } else false
         }
         dlg.setOnDismissListener {
+            (ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(et.windowToken, 0)
             val n = et.text.toString().trim()
-            val nn = if (n.isEmpty()) L(context, "Папка", "Folder") else n
+            val nn = if (n.isEmpty()) L(ctx, "Папка", "Folder") else n
             if (nn != item.name) {
                 item.name = nn
                 save()
                 post { rebuild() }
             }
         }
-        box.alpha = 0f
+        applyAnim(0f)
         dlg.show()
+        root.requestFocus()
         box.post {
-            val a = IntArray(2)
             val o = IntArray(2)
-            box.getLocationOnScreen(a)
+            val r = IntArray(2)
             origin.getLocationOnScreen(o)
-            box.pivotX = o[0] + origin.width / 2f - a[0]
-            box.pivotY = o[1] + origin.height / 2f - a[1]
-            box.scaleX = 0.3f
-            box.scaleY = 0.3f
-            box.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(prefs.speed.toLong())
-                .setInterpolator(curveOf(prefs.curve)).start()
+            box.getLocationOnScreen(r)
+            box.pivotX = o[0] + origin.width / 2f - r[0]
+            box.pivotY = o[1] + origin.height / 2f - r[1]
+            val va = ValueAnimator.ofFloat(0f, 1f)
+            va.duration = prefs.speed.toLong().coerceIn(240L, 480L)
+            va.interpolator = curveOf(prefs.curve)
+            va.addUpdateListener { if (!closing) applyAnim(it.animatedValue as Float) }
+            va.start()
         }
+    }
+
+    // выбор приложений для добавления в папку
+    private fun pickApps(item: DeskItem, done: () -> Unit) {
+        val ctx = context
+        val sh = ctx.resources.displayMetrics.heightPixels
+        val cand = apps.filter { it.key !in item.keys }.sortedBy { it.label.lowercase() }
+        if (cand.isEmpty()) return
+        val sel = LinkedHashSet<String>()
+        val list = LinearLayout(ctx)
+        list.orientation = LinearLayout.VERTICAL
+        for (a in cand) {
+            val row = LinearLayout(ctx)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.setPadding(ctx.dp(8), ctx.dp(6), ctx.dp(4), ctx.dp(6))
+            val ic = ImageView(ctx)
+            ic.setImageDrawable(a.icon)
+            row.addView(ic, LinearLayout.LayoutParams(ctx.dp(40), ctx.dp(40)))
+            val tv = TextView(ctx)
+            tv.text = a.label
+            tv.setTextColor(Color.WHITE)
+            tv.textSize = 16f
+            tv.maxLines = 1
+            tv.ellipsize = android.text.TextUtils.TruncateAt.END
+            val tlp = LinearLayout.LayoutParams(0, -2, 1f)
+            tlp.leftMargin = ctx.dp(14)
+            row.addView(tv, tlp)
+            val cb = CheckBox(ctx)
+            cb.isClickable = false
+            cb.isFocusable = false
+            row.addView(cb, LinearLayout.LayoutParams(-2, -2))
+            row.setOnClickListener {
+                cb.isChecked = !cb.isChecked
+                if (cb.isChecked) sel.add(a.key) else sel.remove(a.key)
+            }
+            list.addView(row)
+        }
+        val sv = ScrollView(ctx)
+        sv.isVerticalScrollBarEnabled = false
+        sv.addView(list)
+        val box = LinearLayout(ctx)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(ctx.dp(16), ctx.dp(16), ctx.dp(16), ctx.dp(8))
+        val bg = GradientDrawable()
+        bg.setColor(0xF0202124.toInt())
+        bg.cornerRadius = ctx.dp(28).toFloat()
+        box.background = bg
+        val title = TextView(ctx)
+        title.text = L(ctx, "Добавить в папку", "Add to folder")
+        title.setTextColor(Color.WHITE)
+        title.textSize = 18f
+        title.gravity = Gravity.CENTER
+        box.addView(title, LinearLayout.LayoutParams(-1, -2))
+        val h = if (cand.size > 8) (sh * 0.5f).toInt() else -2
+        val vlp = LinearLayout.LayoutParams(-1, h)
+        vlp.topMargin = ctx.dp(8)
+        box.addView(sv, vlp)
+        val dlg = AlertDialog.Builder(ctx).setView(box).create()
+        dlg.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        val btns = LinearLayout(ctx)
+        btns.orientation = LinearLayout.HORIZONTAL
+        btns.gravity = Gravity.END
+        fun btn(text: String, onClick: () -> Unit): TextView {
+            val t = TextView(ctx)
+            t.text = text
+            t.setTextColor(Color.WHITE)
+            t.textSize = 16f
+            t.setPadding(ctx.dp(18), ctx.dp(12), ctx.dp(18), ctx.dp(12))
+            t.setOnClickListener { onClick() }
+            return t
+        }
+        btns.addView(btn(L(ctx, "Отмена", "Cancel")) { dlg.dismiss() })
+        btns.addView(btn(L(ctx, "Готово", "Done")) {
+            for (key in sel) {
+                items.removeAll { it !== item && it.widget == 0 && !it.folder && it.keys.size == 1 && it.keys[0] == key }
+                for (o in items) if (o !== item && o.folder) o.keys.remove(key)
+                if (!item.keys.contains(key)) item.keys.add(key)
+            }
+            dlg.dismiss()
+            if (sel.isNotEmpty()) {
+                save()
+                post { rebuild() }
+                done()
+            }
+        })
+        box.addView(btns, LinearLayout.LayoutParams(-1, -2))
+        dlg.show()
     }
 
     private fun takeOut(item: DeskItem, a: LauncherApp) {
@@ -794,5 +1026,38 @@ class Desk(c: Context, private val prefs: Prefs,
         items.remove(item)
         save()
         post { rebuild() }
+    }
+}
+
+/** Плитка "Добавить" в открытой папке: серый полупрозрачный квадрат со скруглением и плюс. */
+class PlusTile(c: Context, private val sz: Int) : View(c) {
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val edge = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val plus = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val box = RectF()
+
+    init {
+        val d = c.resources.displayMetrics.density
+        fill.color = 0xA0666B73.toInt()
+        edge.style = Paint.Style.STROKE
+        edge.color = 0x40FFFFFF
+        edge.strokeWidth = 1.5f * d
+        plus.style = Paint.Style.STROKE
+        plus.strokeCap = Paint.Cap.ROUND
+        plus.color = Color.WHITE
+        plus.strokeWidth = 2.6f * d
+    }
+
+    override fun onDraw(cv: Canvas) {
+        val e = edge.strokeWidth / 2f
+        box.set(e, e, width - e, height - e)
+        val r = sz * 0.26f
+        cv.drawRoundRect(box, r, r, fill)
+        cv.drawRoundRect(box, r, r, edge)
+        val cx = width / 2f
+        val cy = height / 2f
+        val l = sz * 0.23f
+        cv.drawLine(cx - l, cy, cx + l, cy, plus)
+        cv.drawLine(cx, cy - l, cx, cy + l, plus)
     }
 }
