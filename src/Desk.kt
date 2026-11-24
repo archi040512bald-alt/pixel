@@ -50,12 +50,14 @@ class FolderIcon(c: Context, private val icons: List<Drawable>,
         val rad = if (r0 > 0f) r0 else s * 0.28f
         box.set(l, t, r, b)
         cv.drawRoundRect(box, rad, rad, paint)
-        // слот мини-значка как в папке 1x1; в большой папке слотов больше
-        val pad = s * 0.14f
-        val cell = s * 0.36f
-        val ic = cell * 0.88f
+        // мини-значки растут вместе с плиткой (по корню из площади), отступ остаётся прежним;
+        // у папки 1x1 k = 1 и всё выглядит как раньше
         val tw = r - l
         val th = b - t
+        val k = Math.sqrt((tw / s * th / s).toDouble()).toFloat().coerceAtLeast(1f)
+        val pad = s * 0.14f
+        val cell = s * 0.36f * k
+        val ic = cell * 0.88f
         val cols = floor((tw - pad * 2) / cell + 0.02f).toInt().coerceAtLeast(1)
         val rows = floor((th - pad * 2) / cell + 0.02f).toInt().coerceAtLeast(1)
         val gx = l + (tw - cols * cell) / 2f
